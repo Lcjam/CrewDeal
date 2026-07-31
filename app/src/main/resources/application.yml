@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: groupdrop
+  datasource:
+    url: jdbc:postgresql://localhost:5432/groupdrop
+    username: groupdrop
+    password: groupdrop
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+groupdrop:
+  time-zone: Asia/Seoul

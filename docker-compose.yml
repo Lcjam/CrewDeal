@@ -1,0 +1,44 @@
+# GroupDrop 로컬 인프라 (기획서 15.1)
+# 앱(app)·가상 PG(mock-pg)는 개발 중에는 ./gradlew bootRun으로 호스트에서 실행하고,
+# 컨테이너화(Dockerfile)는 다중 인스턴스 테스트(S1-b)를 준비하는 시점에 추가한다.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: groupdrop-postgres
+    environment:
+      POSTGRES_DB: groupdrop
+      POSTGRES_USER: groupdrop
+      POSTGRES_PASSWORD: groupdrop
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U groupdrop -d groupdrop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: groupdrop-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: groupdrop-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  pgdata:
+  grafana-data:
