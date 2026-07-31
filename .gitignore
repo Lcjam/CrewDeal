@@ -1,0 +1,20 @@
+# Claude Code
+.claude/settings.local.json
+
+# Gradle / Java
+.gradle/
+build/
+out/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# 로컬 환경
+.env
+docker-compose.override.yml
