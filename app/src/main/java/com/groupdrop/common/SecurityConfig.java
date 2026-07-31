@@ -1,28 +1,55 @@
 package com.groupdrop.common;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 
 /**
- * 스캐폴딩 단계의 최소 구성: 관측 엔드포인트만 공개, 나머지는 인증 요구.
- * 시드 계정 + 세션 로그인(기획서 22장)은 1주차 인증 작업에서 구성한다.
+ * 세션 기반 로그인 + 시드 계정 (기획서 16.3). JSON 로그인(AuthController)이 폼 로그인을 대체한다.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+        return configuration.getAuthenticationManager();
+    }
+
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                     SecurityContextRepository securityContextRepository) throws Exception {
         http
+                // 브라우저 폼이 없는 API 데모 범위 — 쿠키 세션이지만 CSRF 토큰을 다룰 폼/JS 클라이언트가 없어 비활성화
+                .csrf(AbstractHttpConfigurer::disable)
+                .securityContext(context -> context.securityContextRepository(securityContextRepository))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info",
+                        .requestMatchers("/api/auth/login", "/actuator/health", "/actuator/info",
                                 "/actuator/prometheus", "/actuator/metrics/**").permitAll()
                         .anyRequest().authenticated())
-                .formLogin(Customizer.withDefaults());
+                .exceptionHandling(exceptionHandling -> exceptionHandling
+                        .authenticationEntryPoint((request, response, authException) ->
+                                response.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
         return http.build();
     }
 }
