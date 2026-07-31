@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: groupdrop-app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+  # mock-pg는 도메인 지표가 생기는 3주차에 micrometer 추가 후 스크레이프 대상에 편입
