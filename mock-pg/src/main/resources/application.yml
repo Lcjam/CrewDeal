@@ -10,3 +10,8 @@ management:
     web:
       exposure:
         include: health,info
+
+mockpg:
+  webhook:
+    target-url: http://localhost:8080/api/webhooks/payments
+    secret: groupdrop-mock-pg-secret

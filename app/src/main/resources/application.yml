@@ -29,3 +29,15 @@ groupdrop:
   outbox-polling-interval: 5s
   campaign-lifecycle-polling-interval: 1s
   reservation-expiry-polling-interval: 5s
+  message-lease-duration: 1m
+  message-retry-backoff: 5s
+  message-batch-size: 50
+  idempotency-key-ttl: 24h
+  orphan-payment-sweep-interval: 1m
+  pg:
+    base-url: http://localhost:18080
+    request-timeout: 3s
+    orphan-threshold-multiplier: 2
+  webhook:
+    secret: groupdrop-mock-pg-secret
+    timestamp-tolerance: 5m

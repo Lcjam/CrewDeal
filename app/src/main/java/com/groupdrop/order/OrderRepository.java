@@ -22,13 +22,13 @@ public class OrderRepository {
         this.jdbc = jdbc;
     }
 
-    public boolean claimIdempotency(String scope, String key, String hash, Instant now) {
+    public boolean claimIdempotency(String scope, String key, String hash, Instant now, Instant expiresAt) {
         return jdbc.update("""
                 INSERT INTO idempotency_requests
-                    (scope, idempotency_key, request_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (scope, idempotency_key, request_hash, expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (scope, idempotency_key) DO NOTHING
-                """, scope, key, hash, ts(now), ts(now)) == 1;
+                """, scope, key, hash, ts(expiresAt), ts(now), ts(now)) == 1;
     }
 
     public Optional<IdempotencyRecord> findIdempotency(String scope, String key) {
@@ -43,7 +43,7 @@ public class OrderRepository {
     public void completeIdempotency(String scope, String key, Long orderId, Instant now) {
         int updated = jdbc.update("""
                 UPDATE idempotency_requests
-                   SET resource_type = 'ORDER', resource_id = ?, updated_at = ?
+                   SET resource_type = 'ORDER', resource_id = ?, status = 'COMPLETED', updated_at = ?
                  WHERE scope = ? AND idempotency_key = ? AND resource_id IS NULL
                 """, orderId, ts(now), scope, key);
         if (updated != 1) {
@@ -177,12 +177,20 @@ public class OrderRepository {
                 rs.getLong("unit_price"), rs.getLong("line_amount"), rs.getString("reservation_status")), orderId);
     }
 
+    /**
+     * ORD-03 만료 유예: 결제가 PROCESSING·UNKNOWN인 주문은 만료 대상에서 제외한다.
+     * 결과 불명인 결제의 재고를 먼저 풀면 11.6의 경쟁 창이 불필요하게 넓어진다.
+     */
     public List<Long> lockExpirableOrderIds(Instant now, int limit) {
         return jdbc.query("""
-                SELECT id FROM orders
-                 WHERE status = 'PENDING_PAYMENT' AND expires_at <= ?
-                 ORDER BY id
-                 FOR UPDATE SKIP LOCKED
+                SELECT o.id FROM orders o
+                 WHERE o.status = 'PENDING_PAYMENT' AND o.expires_at <= ?
+                   AND NOT EXISTS (
+                       SELECT 1 FROM payments p
+                        WHERE p.order_id = o.id AND p.status IN ('PROCESSING', 'UNKNOWN')
+                   )
+                 ORDER BY o.id
+                 FOR UPDATE OF o SKIP LOCKED
                  LIMIT ?
                 """, (rs, rowNum) -> rs.getLong("id"), ts(now), limit);
     }
@@ -192,6 +200,10 @@ public class OrderRepository {
                 UPDATE orders
                    SET status = 'EXPIRED', updated_at = ?
                  WHERE id = ? AND status = 'PENDING_PAYMENT' AND expires_at <= ?
+                   AND NOT EXISTS (
+                       SELECT 1 FROM payments p
+                        WHERE p.order_id = orders.id AND p.status IN ('PROCESSING', 'UNKNOWN')
+                   )
                 RETURNING campaign_id, buyer_id, total_quantity
                 """, (rs, rowNum) -> new ExpiredOrder(
                 rs.getLong("campaign_id"), rs.getLong("buyer_id"), rs.getInt("total_quantity")),
@@ -226,6 +238,58 @@ public class OrderRepository {
                 """, quantity, ts(now), campaignId, buyerId, quantity) == 1;
     }
 
+    public Optional<String> findStatus(Long orderId) {
+        return jdbc.query("SELECT status FROM orders WHERE id = ?",
+                (rs, rowNum) -> rs.getString("status"), orderId).stream().findFirst();
+    }
+
+    /** 결제 성공 후처리 (13.4). 조건부이므로 이벤트가 두 번 와도 전이는 한 번만 일어난다 (11.4). */
+    public boolean markPaid(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'PAID', updated_at = ?
+                 WHERE id = ? AND status = 'PENDING_PAYMENT'
+                """, ts(now), orderId) == 1;
+    }
+
+    /**
+     * 11.6: 재고가 이미 풀린 뒤 결제 성공이 확인된 경우. 재고를 되찾아오지 않고 환불로 보낸다 —
+     * 판매 가능으로 돌아간 재고를 다시 뺏으면 그 사이 성사된 다른 주문을 깨뜨린다.
+     */
+    public boolean markRefundingFromExpired(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'REFUNDING', updated_at = ?
+                 WHERE id = ? AND status = 'EXPIRED'
+                """, ts(now), orderId) == 1;
+    }
+
+    public boolean flagOpsHold(Long orderId, String reason, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET ops_hold = TRUE, ops_hold_reason = ?, updated_at = ?
+                 WHERE id = ? AND ops_hold = FALSE
+                """, reason, ts(now), orderId) == 1;
+    }
+
+    public List<ConfirmedReservation> confirmReservations(Long orderId, Instant now) {
+        return jdbc.query("""
+                UPDATE stock_reservations sr
+                   SET status = 'CONFIRMED', updated_at = ?
+                  FROM order_items oi
+                 WHERE sr.order_item_id = oi.id AND oi.order_id = ? AND sr.status = 'ACTIVE'
+                RETURNING sr.campaign_inventory_id, sr.quantity
+                """, (rs, rowNum) -> new ConfirmedReservation(
+                rs.getLong("campaign_inventory_id"), rs.getInt("quantity")), ts(now), orderId);
+    }
+
+    /** 예약 확정은 재고를 되돌리는 것이 아니라 reserved → sold로 옮기는 것이다 (12.1). */
+    public boolean commitInventory(Long inventoryId, int quantity) {
+        return jdbc.update("""
+                UPDATE campaign_inventories
+                   SET reserved_quantity = reserved_quantity - ?,
+                       sold_quantity = sold_quantity + ?
+                 WHERE id = ? AND reserved_quantity >= ?
+                """, quantity, quantity, inventoryId, quantity) == 1;
+    }
+
     private OrderHeader mapHeader(ResultSet rs, int rowNum) throws SQLException {
         return new OrderHeader(rs.getLong("id"), rs.getLong("campaign_id"), rs.getLong("buyer_id"),
                 rs.getString("status"), rs.getLong("total_amount"), rs.getInt("total_quantity"),
@@ -252,4 +316,5 @@ public class OrderRepository {
     public record OrderSnapshot(OrderHeader header, List<OrderItemSnapshot> items) { }
     public record ExpiredOrder(Long campaignId, Long buyerId, int totalQuantity) { }
     public record ExpiredReservation(Long inventoryId, int quantity) { }
+    public record ConfirmedReservation(Long inventoryId, int quantity) { }
 }
