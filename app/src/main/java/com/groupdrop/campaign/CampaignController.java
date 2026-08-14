@@ -47,6 +47,11 @@ public class CampaignController {
         return ResponseEntity.ok(campaignService.rejectCampaign(authentication.getName(), campaignId, request));
     }
 
+    @PostMapping("/api/admin/campaigns/{campaignId}/cancel")
+    public ResponseEntity<CampaignResponse> cancel(Authentication authentication, @PathVariable Long campaignId) {
+        return ResponseEntity.ok(campaignService.cancelCampaign(authentication.getName(), campaignId));
+    }
+
     @GetMapping("/api/campaigns/{campaignId}")
     public ResponseEntity<CampaignResponse> get(@PathVariable Long campaignId) {
         return ResponseEntity.ok(campaignService.getCampaign(campaignId));

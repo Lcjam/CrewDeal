@@ -8,7 +8,9 @@ import com.groupdrop.user.UserRepository;
 import com.groupdrop.user.UserRole;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,10 +58,15 @@ public class ProductService {
         if (request.skus() == null || request.skus().isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PRODUCT_SKUS_REQUIRED", "SKU는 1개 이상이어야 합니다.");
         }
+        Set<String> optionNames = new HashSet<>();
         for (CreateProductRequest.SkuRequest sku : request.skus()) {
             if (sku.optionName() == null || sku.optionName().isBlank()) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "PRODUCT_SKU_OPTION_NAME_REQUIRED",
                         "SKU 옵션명은 필수입니다.");
+            }
+            if (!optionNames.add(sku.optionName())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "PRODUCT_SKU_OPTION_DUPLICATE",
+                        "중복된 SKU 옵션명입니다: " + sku.optionName());
             }
         }
 
