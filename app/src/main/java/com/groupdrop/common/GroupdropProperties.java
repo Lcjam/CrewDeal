@@ -35,7 +35,8 @@ public record GroupdropProperties(
         @DefaultValue Webhook webhook) {
 
     public record Pg(
-            @DefaultValue("http://localhost:18080") String baseUrl,
+            /** 로컬 실행 시 mock-pg의 기본 포트. Compose에서는 서비스 이름으로 덮어쓴다. */
+            @DefaultValue("http://localhost:8081") String baseUrl,
             /** PG 호출 타임아웃. 초과는 실패가 아니라 UNKNOWN이다 (PAY-03). */
             @DefaultValue("3s") Duration requestTimeout,
             /**
