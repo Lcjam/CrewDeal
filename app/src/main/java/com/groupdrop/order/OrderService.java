@@ -52,7 +52,7 @@ public class OrderService {
         String scope = "ORDER:" + buyer.getId();
         Instant now = Instant.now(clock);
 
-        if (!orderRepository.claimIdempotency(scope, key, requestHash, now)) {
+        if (!orderRepository.claimIdempotency(scope, key, requestHash, now, now.plus(properties.idempotencyKeyTtl()))) {
             OrderRepository.IdempotencyRecord existing = orderRepository.findIdempotency(scope, key)
                     .orElseThrow(() -> new IllegalStateException("멱등 요청 레코드를 찾을 수 없습니다."));
             if (!existing.requestHash().equals(requestHash)) {

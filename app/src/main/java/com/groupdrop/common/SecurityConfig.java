@@ -49,6 +49,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
                 .authorizeHttpRequests(auth -> auth
+                        // 웹훅은 세션이 아니라 HMAC 서명으로 인증한다 (PAY-04, 16.3)
+                        .requestMatchers("/api/webhooks/payments").permitAll()
                         .requestMatchers("/api/auth/login", "/actuator/health", "/actuator/info",
                                 "/actuator/prometheus", "/actuator/metrics/**").permitAll()
                 .anyRequest().authenticated())

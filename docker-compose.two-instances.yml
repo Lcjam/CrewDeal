@@ -1,0 +1,54 @@
+# 17.3 2계층 검증용 오버레이 — 앱 인스턴스 2개 + 공유 DB.
+# 단일 JVM 테스트는 커넥션 풀·인메모리 상태를 공유하므로 다중 워커 안전성을 증명하지 못한다.
+# Outbox·Inbox의 FOR UPDATE SKIP LOCKED가 실제로 중복 소비를 막는지는 이 구성에서만 확인된다.
+#
+# 사용: docker compose -p groupdrop-week3 -f docker-compose.yml -f docker-compose.two-instances.yml up -d
+services:
+  app:
+    environment:
+      GROUPDROP_PG_BASE_URL: http://mock-pg:8081
+      GROUPDROP_OUTBOX_POLLING_INTERVAL: 1s
+      GROUPDROP_INBOX_POLLING_INTERVAL: 1s
+      GROUPDROP_ORPHAN_PAYMENT_SWEEP_INTERVAL: 30s
+      GROUPDROP_RESERVATION_DURATION: 30m
+      # 배치를 작게 잡아 한 인스턴스가 일감을 통째로 가져가지 않게 한다 — 경쟁 소비를 실제로 관찰하기 위함.
+      GROUPDROP_MESSAGE_BATCH_SIZE: 3
+
+  app2:
+    build:
+      context: ./app
+    image: groupdrop-app:local
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupdrop
+      SPRING_DATASOURCE_USERNAME: groupdrop
+      SPRING_DATASOURCE_PASSWORD: groupdrop
+      GROUPDROP_PG_BASE_URL: http://mock-pg:8081
+      GROUPDROP_OUTBOX_POLLING_INTERVAL: 1s
+      GROUPDROP_INBOX_POLLING_INTERVAL: 1s
+      GROUPDROP_ORPHAN_PAYMENT_SWEEP_INTERVAL: 30s
+      GROUPDROP_RESERVATION_DURATION: 30m
+      # 배치를 작게 잡아 한 인스턴스가 일감을 통째로 가져가지 않게 한다 — 경쟁 소비를 실제로 관찰하기 위함.
+      GROUPDROP_MESSAGE_BATCH_SIZE: 3
+    ports:
+      - "${APP2_PORT:-58083}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health > /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  mock-pg:
+    environment:
+      # PG는 인스턴스 하나에만 웹훅을 보낸다 (실제 PG가 LB 뒤 한 곳에 보내는 것과 같다).
+      # 수신 인스턴스와 처리 인스턴스가 달라도 정확히 한 번 소비되는지가 이 검증의 핵심이다.
+      MOCKPG_WEBHOOK_TARGET_URL: http://app:8080/api/webhooks/payments
+
+  # 2계층 검증에서는 관측 스택을 띄우지 않는다 (지표는 각 인스턴스의 /actuator/prometheus를 직접 읽는다).
+  prometheus:
+    profiles: ["observability"]
+  grafana:
+    profiles: ["observability"]
