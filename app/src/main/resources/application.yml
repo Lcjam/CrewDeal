@@ -35,7 +35,7 @@ groupdrop:
   idempotency-key-ttl: 24h
   orphan-payment-sweep-interval: 1m
   pg:
-    base-url: http://localhost:18080
+    base-url: http://localhost:8081
     request-timeout: 3s
     orphan-threshold-multiplier: 2
   webhook:

@@ -23,6 +23,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupdrop
       SPRING_DATASOURCE_USERNAME: groupdrop
       SPRING_DATASOURCE_PASSWORD: groupdrop
+      # 컨테이너 안에서 가상 PG는 localhost가 아니라 서비스 이름으로 찾는다.
+      # 이 값이 없으면 모든 결제가 연결 실패 → UNKNOWN으로 떨어진다 (PAY-03).
+      GROUPDROP_PG_BASE_URL: http://mock-pg:8081
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
@@ -39,6 +42,9 @@ services:
     build:
       context: ./mock-pg
     image: groupdrop-mock-pg:local
+    environment:
+      # 웹훅 수신처도 서비스 이름이어야 한다. 기본값(localhost:8080)은 mock-pg 자신을 가리킨다.
+      MOCKPG_WEBHOOK_TARGET_URL: http://app:8080/api/webhooks/payments
     ports:
       - "${MOCK_PG_PORT:-8081}:8081"
     healthcheck:
