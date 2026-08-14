@@ -86,6 +86,28 @@ class CampaignFlowApiTest {
                 .andExpect(jsonPath("$.skus[1].optionName").value("화이트/L"));
     }
 
+    @Test
+    void 공급사가_아니면_상품을_등록할_수_없고_중복_SKU_옵션은_거부된다() throws Exception {
+        String requestJson = """
+                {"name":"권한 테스트 상품","skus":[{"optionName":"단일 옵션"}]}""";
+
+        mockMvc.perform(post("/api/suppliers/me/products")
+                        .session(login("buyer1@groupdrop.test"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_ROLE"));
+
+        String duplicateOptions = """
+                {"name":"중복 옵션 상품","skus":[{"optionName":"블랙/M"},{"optionName":"블랙/M"}]}""";
+        mockMvc.perform(post("/api/suppliers/me/products")
+                        .session(login("supplier@groupdrop.test"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(duplicateOptions))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PRODUCT_SKU_OPTION_DUPLICATE"));
+    }
+
     // ---- 2. 캠페인 생성 시 재고·정책 버전 생성 ----
 
     @Test
@@ -157,6 +179,50 @@ class CampaignFlowApiTest {
                         .content(failJson))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("CAMPAIGN_MARGIN_GATE_FAILED"));
+    }
+
+    @Test
+    void CAM_01_필수값과_가격_기간_재고_수락조건을_검증한다() throws Exception {
+        ProductFixture product = createProduct(uniqueName("수락조건상품"));
+        String validJson = campaignJson(
+                "수락조건 캠페인", uniqueSlug("acceptance"), supplierId(), product.productId(), 19900, 750,
+                "[{\"productSkuId\":" + product.sku1Id() + ",\"allocatedQuantity\":10,\"supplyUnitPrice\":17810}]");
+
+        assertCampaignBadRequest(
+                validJson.replace("\"name\":\"수락조건 캠페인\"", "\"name\":\"\""),
+                "CAMPAIGN_NAME_REQUIRED");
+        assertCampaignBadRequest(
+                validJson.replaceFirst("\"slug\":\"[^\"]+\"", "\"slug\":\"\""),
+                "CAMPAIGN_SLUG_REQUIRED");
+        assertCampaignBadRequest(
+                validJson.replace("\"dealPrice\":19900", "\"dealPrice\":0"),
+                "CAMPAIGN_INVALID_DEAL_PRICE");
+        assertCampaignBadRequest(
+                validJson.replace("\"endsAt\":\"2026-08-10T00:00:00Z\"",
+                        "\"endsAt\":\"2026-08-01T00:00:00Z\""),
+                "CAMPAIGN_INVALID_DATE_RANGE");
+        assertCampaignBadRequest(
+                validJson.replace("\"allocatedQuantity\":10", "\"allocatedQuantity\":-1"),
+                "CAMPAIGN_INVALID_ALLOCATED_QUANTITY");
+        assertCampaignBadRequest(
+                validJson.replaceFirst("\"skus\":\\[.*]", "\"skus\":[]"),
+                "CAMPAIGN_SKUS_REQUIRED");
+    }
+
+    @Test
+    void 마진_계산이_long_범위를_넘으면_400으로_거부한다() throws Exception {
+        ProductFixture product = createProduct(uniqueName("큰금액상품"));
+        String requestJson = campaignJson(
+                "큰 금액 캠페인", uniqueSlug("amount-overflow"), supplierId(), product.productId(),
+                Long.MAX_VALUE, 750,
+                "[{\"productSkuId\":" + product.sku1Id() + ",\"allocatedQuantity\":1,\"supplyUnitPrice\":0}]");
+
+        mockMvc.perform(post("/api/campaigns")
+                        .session(login("influencer@groupdrop.test"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CAMPAIGN_AMOUNT_TOO_LARGE"));
     }
 
     // ---- 4. 슬러그 중복 ----
@@ -243,6 +309,19 @@ class CampaignFlowApiTest {
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("DRAFT")));
     }
 
+    @Test
+    void 운영자가_아니면_캠페인을_승인할_수_없다() throws Exception {
+        Long campaignId = createDraftCampaign(uniqueSlug("non-admin-approve"));
+        mockMvc.perform(post("/api/campaigns/" + campaignId + "/submit")
+                        .session(login("influencer@groupdrop.test")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/campaigns/" + campaignId + "/approve")
+                        .session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_ROLE"));
+    }
+
     // ---- 8. 인가 실패 ----
 
     @Test
@@ -319,6 +398,15 @@ class CampaignFlowApiTest {
     }
 
     // ---- 헬퍼 ----
+
+    private void assertCampaignBadRequest(String requestJson, String expectedCode) throws Exception {
+        mockMvc.perform(post("/api/campaigns")
+                        .session(login("influencer@groupdrop.test"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(expectedCode));
+    }
 
     private Long createDraftCampaign(String slug) throws Exception {
         ProductFixture product = createProduct(uniqueName("초안상품"));

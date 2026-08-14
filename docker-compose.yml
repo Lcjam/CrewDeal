@@ -1,17 +1,12 @@
-# GroupDrop 로컬 인프라 (기획서 15.1)
-# 앱(app)·가상 PG(mock-pg)는 개발 중에는 ./gradlew bootRun으로 호스트에서 실행하고,
-# 컨테이너화(Dockerfile)는 다중 인스턴스 테스트(S1-b)를 준비하는 시점에 추가한다.
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: groupdrop-postgres
     environment:
       POSTGRES_DB: groupdrop
       POSTGRES_USER: groupdrop
       POSTGRES_PASSWORD: groupdrop
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,24 +15,72 @@ services:
       timeout: 3s
       retries: 10
 
+  app:
+    build:
+      context: ./app
+    image: groupdrop-app:local
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupdrop
+      SPRING_DATASOURCE_USERNAME: groupdrop
+      SPRING_DATASOURCE_PASSWORD: groupdrop
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health > /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  mock-pg:
+    build:
+      context: ./mock-pg
+    image: groupdrop-mock-pg:local
+    ports:
+      - "${MOCK_PG_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8081/actuator/health > /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
   prometheus:
     image: prom/prometheus:latest
-    container_name: groupdrop-prometheus
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   grafana:
     image: grafana/grafana:latest
-    container_name: groupdrop-grafana
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
       - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
 
 volumes:
   pgdata:

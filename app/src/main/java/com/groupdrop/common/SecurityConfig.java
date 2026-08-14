@@ -1,6 +1,11 @@
 package com.groupdrop.common;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -46,10 +51,31 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/actuator/health", "/actuator/info",
                                 "/actuator/prometheus", "/actuator/metrics/**").permitAll()
-                        .anyRequest().authenticated())
+                .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) ->
-                                response.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
+                                writeProblem(response, request, HttpStatus.UNAUTHORIZED,
+                                        "AUTHENTICATION_REQUIRED", "인증이 필요합니다."))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeProblem(response, request, HttpStatus.FORBIDDEN,
+                                        "ACCESS_DENIED", "이 작업을 수행할 권한이 없습니다.")));
         return http.build();
+    }
+
+    static void writeProblem(HttpServletResponse response, HttpServletRequest request,
+                             HttpStatus status, String code, String detail) throws IOException {
+        ProblemDetail problem = ProblemDetails.of(status, code, detail, request);
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.getWriter().write("""
+                {"type":"%s","title":"%s","status":%d,"detail":"%s","instance":"%s","code":"%s"}
+                """.formatted(
+                json(problem.getType().toString()), json(problem.getTitle()), problem.getStatus(),
+                json(problem.getDetail()), json(problem.getInstance().toString()), json(code)));
+    }
+
+    private static String json(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 }

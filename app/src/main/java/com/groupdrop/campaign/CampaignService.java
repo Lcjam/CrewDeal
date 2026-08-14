@@ -174,6 +174,24 @@ public class CampaignService {
         return toResponse(requireCampaign(campaignId));
     }
 
+    @Transactional
+    public CampaignResponse cancelCampaign(String requesterEmail, Long campaignId) {
+        requireAdmin(requesterEmail);
+        Campaign campaign = requireCampaign(campaignId);
+        Instant now = Instant.now(clock);
+        int updated = switch (campaign.getStatus()) {
+            case SCHEDULED -> campaignRepository.cancelScheduled(campaignId, now);
+            case OPEN, SOLD_OUT -> campaignRepository.forceClose(campaignId, campaign.getStatus(), now);
+            default -> 0;
+        };
+        if (updated == 0) {
+            Campaign current = requireCampaign(campaignId);
+            throw new ApiException(HttpStatus.CONFLICT, "CAMPAIGN_INVALID_TRANSITION",
+                    "SCHEDULED, OPEN 또는 SOLD_OUT 상태에서만 종료할 수 있습니다. 현재 상태: " + current.getStatus());
+        }
+        return toResponse(requireCampaign(campaignId));
+    }
+
     @Transactional(readOnly = true)
     public CampaignResponse getCampaign(Long campaignId) {
         return toResponse(requireCampaign(campaignId));
@@ -286,8 +304,15 @@ public class CampaignService {
         long marginFactor = (long) BP_SCALE - request.commissionRateBp() - PG_FEE_BP;
         List<Long> failing = new ArrayList<>();
         for (CreateCampaignRequest.SkuAllocation sku : request.skus()) {
-            long lhs = request.dealPrice() * marginFactor;
-            long rhs = sku.supplyUnitPrice() * (long) BP_SCALE;
+            long lhs;
+            long rhs;
+            try {
+                lhs = Math.multiplyExact(request.dealPrice(), marginFactor);
+                rhs = Math.multiplyExact(sku.supplyUnitPrice(), (long) BP_SCALE);
+            } catch (ArithmeticException exception) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "CAMPAIGN_AMOUNT_TOO_LARGE",
+                        "마진을 안전하게 계산할 수 있는 금액 범위를 초과했습니다.");
+            }
             if (lhs <= rhs) {
                 failing.add(sku.productSkuId());
             }

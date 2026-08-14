@@ -11,6 +11,10 @@ spring:
     open-in-view: false
 
 management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   endpoints:
     web:
       exposure:
@@ -18,3 +22,10 @@ management:
 
 groupdrop:
   time-zone: Asia/Seoul
+  reservation-duration: 10m
+  reconciliation-interval: 30m
+  settlement-grace-period: 7d
+  inbox-polling-interval: 5s
+  outbox-polling-interval: 5s
+  campaign-lifecycle-polling-interval: 1s
+  reservation-expiry-polling-interval: 5s

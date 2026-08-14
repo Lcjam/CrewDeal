@@ -1,10 +1,10 @@
 package com.groupdrop.user;
 
+import com.groupdrop.common.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -56,10 +56,10 @@ public class AuthController {
                     .orElseThrow(() -> new IllegalStateException("인증된 사용자를 찾을 수 없습니다: " + authResult.getName()));
             return ResponseEntity.ok(UserSummaryResponse.from(user));
         } catch (AuthenticationException e) {
-            ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                    HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다.");
-            problem.setProperty("code", "AUTH_INVALID_CREDENTIALS");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+            throw new ApiException(
+                    HttpStatus.UNAUTHORIZED,
+                    "AUTH_INVALID_CREDENTIALS",
+                    "이메일 또는 비밀번호가 올바르지 않습니다.");
         }
     }
 
