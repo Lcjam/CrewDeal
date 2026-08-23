@@ -14,7 +14,14 @@ public record GroupdropProperties(
         @DefaultValue("Asia/Seoul") ZoneId timeZone,
         @DefaultValue("10m") Duration reservationDuration,
         @DefaultValue("30m") Duration reconciliationInterval,
+        /**
+         * REC-01 대사 대상의 기본 최소 경과 시간. 진행 중 거래의 가짜 불일치를 막는 값이며,
+         * 실행 파라미터로 재정의할 수 있다 (S4-b는 0으로 실행).
+         */
+        @DefaultValue("30m") Duration reconciliationMinAge,
         @DefaultValue("7d") Duration settlementGracePeriod,
+        /** 정산 대상 확정·지급 실행 스캔 주기. 유예기간(7일)에 비하면 어떤 값이든 즉시에 가깝다. */
+        @DefaultValue("10s") Duration settlementPollingInterval,
         @DefaultValue("5s") Duration inboxPollingInterval,
         @DefaultValue("5s") Duration outboxPollingInterval,
         @DefaultValue("1s") Duration campaignLifecyclePollingInterval,

@@ -40,6 +40,17 @@ public class RefundStore {
         return new ExecutionResult(record, created[0]);
     }
 
+    /** 대사용 전체 환불 목록. 결제 거래에 환불 금액을 붙여 내보내기 위해 쓴다 (REC-01의 환불 금액 비교). */
+    public java.util.List<RefundRecord> findAll() {
+        return java.util.List.copyOf(byProviderPaymentId.values());
+    }
+
+    /** S7 픽스처 주입. 내부에는 없는 환불을 PG에만 심어 REFUND_MISMATCH를 만들 수 있어야 한다. */
+    public RefundRecord inject(RefundRecord record) {
+        byProviderPaymentId.put(record.providerPaymentId(), record);
+        return record;
+    }
+
     public record ExecutionResult(RefundRecord record, boolean created) {
     }
 }

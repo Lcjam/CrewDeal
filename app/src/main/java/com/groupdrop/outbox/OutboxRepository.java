@@ -74,6 +74,19 @@ public class OutboxRepository {
                 """, truncate(error), ts(now), id);
     }
 
+    /**
+     * 특정 집계에 아직 처리되지 않은 이벤트가 남아 있는가. 대사가 미완 환불을 되살릴 때
+     * "워커가 이미 들고 있는 건"을 다시 발행하지 않기 위해 쓴다 — 중복 발행은 PG 환불을
+     * 두 워커가 동시에 호출하게 만든다 (REC-01).
+     */
+    public boolean hasPending(String eventType, Long aggregateId) {
+        Long count = jdbc.queryForObject("""
+                SELECT count(*) FROM outbox_events
+                 WHERE event_type = ? AND aggregate_id = ? AND status = 'PENDING'
+                """, Long.class, eventType, aggregateId);
+        return count != null && count > 0;
+    }
+
     public long countByStatus(String status) {
         Long count = jdbc.queryForObject(
                 "SELECT count(*) FROM outbox_events WHERE status = ?", Long.class, status);

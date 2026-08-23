@@ -1,6 +1,7 @@
 package com.groupdrop.payment;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * 가상 PG 호출 경계. 이 인터페이스의 존재 이유는 테스트 대역이 아니라 트랜잭션 경계다 —
@@ -15,6 +16,34 @@ public interface PgClient {
      * 재시도는 같은 호출을 그대로 반복하는 것으로 해소한다 — 재호출이 두 번째 환불을 만들지 않는다.
      */
     RefundResult refund(RefundCommand command);
+
+    /**
+     * REC-01 대사용 거래 목록 (14.5의 {@code GET /mock-pg/reconciliation/transactions}).
+     *
+     * <p>다른 두 호출과 달리 결과가 3분기가 아닌 이유는, 목록 조회에는 "모름"이 없기 때문이다 —
+     * 받지 못하면 대사를 하지 않는다. 부분 목록으로 대사하면 멀쩡한 결제가 {@code MISSING_PROVIDER}로
+     * 분류되어 정산이 통째로 HELD된다.
+     *
+     * @param processedBefore 이 시각 이전에 처리된 거래만. REC-01의 최소 경과 시간이 여기로 들어온다.
+     */
+    List<ProviderTransaction> listTransactions(Instant processedBefore);
+
+    /**
+     * PG가 보는 거래 1건. 필드 집합은 REC-01의 비교 필드(결제 금액, 환불 금액, 결제 상태, 거래 발생 시각)
+     * 에서 나왔다.
+     */
+    record ProviderTransaction(String providerPaymentId, String merchantPaymentId, String orderId,
+                               long amount, String status, Instant processedAt, long refundedAmount,
+                               String providerRefundId, Instant refundedAt) {
+
+        public boolean succeeded() {
+            return "SUCCEEDED".equals(status);
+        }
+
+        public boolean refunded() {
+            return refundedAmount > 0;
+        }
+    }
 
     record ConfirmCommand(String merchantPaymentId, Long orderId, long amount) { }
 

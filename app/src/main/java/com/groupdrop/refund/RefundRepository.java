@@ -41,6 +41,12 @@ public class RefundRepository {
         return jdbc.query(SELECT + " WHERE r.payment_id = ? ORDER BY r.id", this::map, paymentId);
     }
 
+    /** REC-01 해소 대상: 최소 경과 시간이 지난 미완 {@code REQUESTED} 환불. */
+    public List<RefundSnapshot> findStaleRequested(Instant threshold, int limit) {
+        return jdbc.query(SELECT + " WHERE r.status = 'REQUESTED' AND r.requested_at <= ?"
+                + " ORDER BY r.id LIMIT ?", this::map, ts(threshold), limit);
+    }
+
     /** 유효(비FAILED) 환불의 존재 여부. 부분 유니크의 1차 방어이자 API의 409 판정 근거다. */
     public boolean hasEffectiveRefund(Long paymentId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
