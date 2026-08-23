@@ -40,6 +40,23 @@ public class PaymentStore {
         return Optional.ofNullable(byProviderId.get(providerPaymentId));
     }
 
+    /** 대사용 전체 거래 목록 (REC-01, 14.5의 GET /mock-pg/reconciliation/transactions). */
+    public java.util.List<PaymentRecord> findAll() {
+        return byMerchantId.values().stream()
+                .sorted(java.util.Comparator.comparing(PaymentRecord::providerPaymentId))
+                .toList();
+    }
+
+    /**
+     * S7 픽스처 주입 (14.5의 POST /mock-pg/test/transactions). 내부 기록과 <b>다른</b> 거래를 심는 것이
+     * 목적이므로 confirm 경로를 타지 않는다 — 멱등·웹훅·장애 모드가 전부 개입해 원하는 불일치를 만들 수 없다.
+     */
+    public PaymentRecord inject(PaymentRecord record) {
+        byMerchantId.put(record.merchantPaymentId(), record);
+        byProviderId.put(record.providerPaymentId(), record);
+        return record;
+    }
+
     public record InsertResult(PaymentRecord record, boolean created) {
     }
 }

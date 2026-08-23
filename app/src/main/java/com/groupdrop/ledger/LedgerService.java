@@ -23,8 +23,11 @@ public class LedgerService {
 
     private static final String TYPE_PAYMENT = "PAYMENT";
     private static final String TYPE_REFUND = "REFUND";
+    private static final String TYPE_PAYOUT = "PAYOUT";
+    private static final String TYPE_RECOVERY = "RECOVERY";
     private static final String REF_PAYMENT = "PAYMENT";
     private static final String REF_REFUND = "REFUND";
+    private static final String REF_SETTLEMENT_BATCH = "SETTLEMENT_BATCH";
 
     /** PG 수수료 고정 비율 3% (기획서 5장). bp 정수 연산으로 계산한다. */
     private static final int PG_FEE_BP = 300;
@@ -99,6 +102,57 @@ public class LedgerService {
             ledger.insertEntry(transactionId, reversed.account(), reversed.side(), reversed.amount());
         }
         return true;
+    }
+
+    /**
+     * LED-04 지급 분개. 지급 예정금을 차변으로 털고 가상 현금(지급 완료)을 대변에 세운다.
+     *
+     * <p>멱등은 {@code (PAYOUT, SETTLEMENT_BATCH, batchId)} 유니크가 보장한다 — 재시도된 지급이
+     * 분개를 두 번 만들지 않는다. 배치당 1건이므로 {@code order_id}는 없다 (캠페인 귀속).
+     *
+     * @return 이 호출이 분개를 기록했으면 true
+     */
+    public boolean recordPayout(Long batchId, Long campaignId, LedgerAccount payableAccount, long amount,
+                                Instant occurredAt, Instant now) {
+        return recordSettlementTransfer(TYPE_PAYOUT, batchId, campaignId, payableAccount, LedgerSide.DEBIT,
+                amount, occurredAt, now);
+    }
+
+    /**
+     * LED-04 회수 분개. 환불 역분개로 지급 예정금 잔액이 음수(회수 채권)가 된 것을 반대 방향으로 소거한다.
+     * 지급과 정확히 대칭이며, 방향만 뒤집혀 있다.
+     */
+    public boolean recordRecovery(Long batchId, Long campaignId, LedgerAccount payableAccount, long amount,
+                                  Instant occurredAt, Instant now) {
+        return recordSettlementTransfer(TYPE_RECOVERY, batchId, campaignId, payableAccount, LedgerSide.CREDIT,
+                amount, occurredAt, now);
+    }
+
+    private boolean recordSettlementTransfer(String transactionType, Long batchId, Long campaignId,
+                                             LedgerAccount payableAccount, LedgerSide payableSide, long amount,
+                                             Instant occurredAt, Instant now) {
+        if (amount <= 0) {
+            // 13.2의 ledger_entry.amount > 0. 0원 배치는 애초에 만들지 않는다 (SET-02).
+            throw new IllegalArgumentException("지급·회수 금액은 양수여야 합니다: " + amount);
+        }
+        Long transactionId = ledger.insertTransactionIfAbsent(transactionType, REF_SETTLEMENT_BATCH, batchId,
+                campaignId, null, occurredAt, now).orElse(null);
+        if (transactionId == null) {
+            log.debug("정산 배치 {}의 {} 거래가 이미 있어 분개를 건너뜁니다.", batchId, transactionType);
+            return false;
+        }
+        ledger.insertEntry(transactionId, payableAccount, payableSide, amount);
+        ledger.insertEntry(transactionId, LedgerAccount.PAYOUT_CASH, payableSide.opposite(), amount);
+        return true;
+    }
+
+    /**
+     * 이 환불의 역분개가 원장에 존재하는가. SET-03 회수 대상 판정의 기준으로 쓴다 —
+     * 이벤트 페이로드의 플래그가 아니라 원장에게 묻는 이유는, 재전달로 역분개가 이전 배달에서
+     * 이미 기록된 경우에도 같은 답이 나와야 하기 때문이다.
+     */
+    public boolean hasRefundReversal(Long refundId) {
+        return ledger.findTransactionId(TYPE_REFUND, REF_REFUND, refundId).isPresent();
     }
 
     /** S5: 모든 원장 거래에서 차변 합계 = 대변 합계 (LED-01, 12.3). */

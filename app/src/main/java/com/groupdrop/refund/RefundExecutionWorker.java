@@ -95,7 +95,11 @@ public class RefundExecutionWorker implements OutboxHandler {
         }
     }
 
-    private void complete(RefundRepository.RefundSnapshot refund, PgClient.RefundResult result) {
+    /**
+     * 패키지 가시성인 이유: 대사(REC-01)의 미완 환불 해소가 이 경로를 그대로 재사용해야 하기 때문이다.
+     * 확정 로직을 복사해 두 벌로 만들면 두 경로가 서로 다르게 낡는다.
+     */
+    void complete(RefundRepository.RefundSnapshot refund, PgClient.RefundResult result) {
         Instant now = Instant.now(clock);
         Instant refundedAt = result.refundedAt() == null ? now : result.refundedAt();
         if (!refunds.markCompleted(refund.id(), result.providerRefundId(), refundedAt, now)) {

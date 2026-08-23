@@ -29,11 +29,21 @@ import org.springframework.test.web.servlet.MockMvc;
         "groupdrop.reservation-expiry-polling-interval=1h",
         "groupdrop.outbox-polling-interval=1h",
         "groupdrop.inbox-polling-interval=1h",
-        "groupdrop.orphan-payment-sweep-interval=1h"
+        "groupdrop.orphan-payment-sweep-interval=1h",
+        "groupdrop.settlement-polling-interval=1h",
+        "groupdrop.reconciliation-interval=1h",
+        // 17.4 정산 지급 실패 주입. 프로퍼티가 꺼져 있으면 주입 자체가 예외이므로 테스트 컨텍스트에서만 켠다.
+        // 하위 클래스가 @SpringBootTest를 다시 선언하면 이 목록이 통째로 대체되므로 여기 한 곳에 모은다
+        // (컨텍스트 캐시를 하나로 유지하는 효과도 있다).
+        "groupdrop.settlement-failure-injection-enabled=true"
 })
 public abstract class AbstractPaymentIntegrationTest {
 
     protected static final String BUYER = "buyer1@groupdrop.test";
+    protected static final String ADMIN = "admin@groupdrop.test";
+    protected static final String INFLUENCER = "influencer@groupdrop.test";
+    protected static final String SUPPLIER = "supplier@groupdrop.test";
+    /** 3.3이 강제하는 "나누어떨어지지 않는 금액". 19,900 × 7.5% = 1,492.5원이므로 절사 규칙이 실제로 걸린다. */
     protected static final long DEAL_PRICE = 19_900L;
 
     @Autowired
@@ -67,6 +77,10 @@ public abstract class AbstractPaymentIntegrationTest {
             // 남은 이벤트 소진
         }
         pgClient.reset();
+        // 대사(REC-01)는 전역 스캔이고 PG 대역은 테스트마다 초기화되므로, 앞선 테스트의 결제가 남긴
+        // 불일치가 다음 테스트로 흘러간다. 그 잔여물이 지급 전 대조를 막아 가짜 HELD를 만들기 때문에
+        // 이벤트와 같은 이유로 여기서 비운다 (실행 이력은 남긴다).
+        jdbc.update("DELETE FROM reconciliation_discrepancies");
     }
 
     /** 주문 1건(수량 quantity)을 만들고 결제 준비 상태로 돌려준다. */
@@ -134,6 +148,18 @@ public abstract class AbstractPaymentIntegrationTest {
                 SELECT ARRAY[initial_quantity,available_quantity,reserved_quantity,sold_quantity]
                   FROM campaign_inventories WHERE id=?
                 """, (rs, rowNum) -> List.of((Integer[]) rs.getArray(1).getArray()), inventoryId);
+    }
+
+    /**
+     * 캠페인을 종료 상태로 만들고 종료 시각을 과거로 돌린다. 정산 유예기간(7일) 경과를
+     * 시계 조작 없이 재현하기 위한 픽스처다 (SET-02).
+     */
+    protected void closeCampaign(Long campaignId, long daysAgo) {
+        jdbc.update("""
+                UPDATE campaigns
+                   SET status = 'CLOSED', closed_at = now() - make_interval(days => ?), updated_at = now()
+                 WHERE id = ?
+                """, (int) daysAgo, campaignId);
     }
 
     /** 결제 생성 시각을 과거로 돌린다. 고아 스윕 임계 경과를 시계 조작 없이 재현하기 위한 픽스처다. */

@@ -1,6 +1,8 @@
 package com.groupdrop.payment;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,6 +37,11 @@ public class StubPgClient implements PgClient {
 
     private final ConcurrentMap<String, String> chargedAtProvider = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> refundedAtProvider = new ConcurrentHashMap<>();
+    /**
+     * PG가 보관하는 거래 원본. 대사(REC-01)는 "PG가 무엇을 갖고 있는가"를 읽어야 하므로,
+     * 대역도 승인 결과만이 아니라 거래 자체를 남겨야 한다. S7의 임의 거래 주입도 이 맵에 심는다.
+     */
+    private final ConcurrentMap<String, ProviderTransaction> transactions = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger();
     private final AtomicInteger refundSequence = new AtomicInteger();
     private final AtomicInteger confirmCount = new AtomicInteger();
@@ -57,10 +64,14 @@ public class StubPgClient implements PgClient {
         }
 
         return switch (mode) {
-            case SUCCEED -> ConfirmResult.succeeded(charge(command.merchantPaymentId()), Instant.now());
-            case DECLINE -> ConfirmResult.failed("PG_DECLINED", "테스트 거절 모드");
+            case SUCCEED -> ConfirmResult.succeeded(charge(command), Instant.now());
+            case DECLINE -> {
+                // 가상 PG와 동일하게 거절도 PG에 남는 거래다. 남기지 않으면 대사가 "PG에 없음"으로 읽는다.
+                record(nextProviderPaymentId(), command, "FAILED");
+                yield ConfirmResult.failed("PG_DECLINED", "테스트 거절 모드");
+            }
             case SUCCEED_BUT_TIMEOUT -> {
-                charge(command.merchantPaymentId());
+                charge(command);
                 yield ConfirmResult.timeout("테스트 응답 유실 모드");
             }
             case TIMEOUT_NO_CHARGE -> ConfirmResult.timeout("테스트 타임아웃 모드 (PG 미승인)");
@@ -92,13 +103,60 @@ public class StubPgClient implements PgClient {
         };
     }
 
-    private String charge(String merchantPaymentId) {
-        return chargedAtProvider.computeIfAbsent(merchantPaymentId, key -> "pg_" + sequence.incrementAndGet());
+    private String charge(ConfirmCommand command) {
+        return chargedAtProvider.computeIfAbsent(command.merchantPaymentId(), key -> {
+            String providerPaymentId = nextProviderPaymentId();
+            record(providerPaymentId, command, "SUCCEEDED");
+            return providerPaymentId;
+        });
+    }
+
+    private String nextProviderPaymentId() {
+        return "pg_" + sequence.incrementAndGet();
+    }
+
+    private void record(String providerPaymentId, ConfirmCommand command, String status) {
+        transactions.put(providerPaymentId, new ProviderTransaction(providerPaymentId,
+                command.merchantPaymentId(), String.valueOf(command.orderId()), command.amount(),
+                status, Instant.now(), 0L, null, null));
     }
 
     private String refundAt(String providerPaymentId) {
-        return refundedAtProvider.computeIfAbsent(providerPaymentId,
-                key -> "rf_" + refundSequence.incrementAndGet());
+        return refundedAtProvider.computeIfAbsent(providerPaymentId, key -> {
+            String providerRefundId = "rf_" + refundSequence.incrementAndGet();
+            transactions.computeIfPresent(providerPaymentId, (id, tx) -> new ProviderTransaction(
+                    tx.providerPaymentId(), tx.merchantPaymentId(), tx.orderId(), tx.amount(), tx.status(),
+                    tx.processedAt(), tx.amount(), providerRefundId, Instant.now()));
+            return providerRefundId;
+        });
+    }
+
+    /**
+     * REC-01 대사가 읽는 PG 거래 목록. 최소 경과 시간이 지난 거래만 돌려주는 것도 PG 쪽 책임이다
+     * (14.5의 {@code createdBefore} 파라미터와 같은 의미).
+     */
+    @Override
+    public List<ProviderTransaction> listTransactions(Instant processedBefore) {
+        return transactions.values().stream()
+                .filter(tx -> !tx.processedAt().isAfter(processedBefore))
+                .sorted(Comparator.comparing(ProviderTransaction::providerPaymentId))
+                .toList();
+    }
+
+    /**
+     * S7 임의 거래 주입 (14.5의 {@code POST /mock-pg/test/transactions}에 대응). 승인 경로를 타지 않는
+     * 이유는 목적이 "내부 기록과 다른 PG 거래"를 만드는 것이라, 멱등·장애 모드가 개입하면 원하는
+     * 불일치를 만들 수 없기 때문이다.
+     */
+    public ProviderTransaction injectTransaction(String providerPaymentId, Long orderId, long amount,
+                                                 String status, Instant processedAt, long refundedAmount) {
+        String id = providerPaymentId == null ? nextProviderPaymentId() : providerPaymentId;
+        ProviderTransaction tx = new ProviderTransaction(id, "injected_" + id,
+                orderId == null ? null : String.valueOf(orderId), amount, status, processedAt,
+                refundedAmount, refundedAmount > 0 ? "rf_injected_" + id : null,
+                refundedAmount > 0 ? processedAt : null);
+        transactions.put(id, tx);
+        return tx;
     }
 
     public void reset() {
@@ -108,6 +166,7 @@ public class StubPgClient implements PgClient {
         duringRefund = () -> { };
         chargedAtProvider.clear();
         refundedAtProvider.clear();
+        transactions.clear();
         confirmCount.set(0);
         refundCount.set(0);
     }
