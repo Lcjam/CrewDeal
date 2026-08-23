@@ -71,6 +71,9 @@ public class PaymentWebhookController {
         // 중복 수신은 오류가 아니다. UNIQUE가 두 번째 적재를 막고, 응답은 그대로 200이어야
         // PG가 재전송을 멈춘다 (11.4).
         boolean accepted = inbox.receive(payload.eventId(), EVENT_TYPE, rawBody, Instant.now(clock));
+        if (!accepted) {
+            metrics.recordWebhookDuplicate();
+        }
         return ResponseEntity.ok(new WebhookAck(payload.eventId(), accepted ? "ACCEPTED" : "DUPLICATE"));
     }
 

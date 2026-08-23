@@ -50,16 +50,27 @@ public class OutboxWorker {
     /** 테스트가 시각을 제어하며 직접 호출한다. 처리한 이벤트 수를 반환한다. */
     public int drain() {
         Instant now = Instant.now(clock);
-        Instant leaseUntil = now.plus(properties.messageLeaseDuration());
-        List<OutboxRepository.ClaimedEvent> claimed =
-                repository.claim(now, leaseUntil, properties.messageBatchSize());
-        int processed = 0;
-        for (OutboxRepository.ClaimedEvent event : claimed) {
-            if (dispatch(event, now)) {
-                processed++;
+        try {
+            Instant leaseUntil = now.plus(properties.messageLeaseDuration());
+            List<OutboxRepository.ClaimedEvent> claimed =
+                    repository.claim(now, leaseUntil, properties.messageBatchSize());
+            int processed = 0;
+            for (OutboxRepository.ClaimedEvent event : claimed) {
+                if (dispatch(event, now)) {
+                    processed++;
+                }
             }
+            return processed;
+        } finally {
+            updatePendingMetrics(now);
         }
-        return processed;
+    }
+
+    private void updatePendingMetrics(Instant now) {
+        OutboxRepository.PendingStats stats = repository.pendingStats();
+        long ageSeconds = stats.oldestCreatedAt() == null ? 0L
+                : Math.max(0L, now.getEpochSecond() - stats.oldestCreatedAt().getEpochSecond());
+        metrics.updateOutboxPending(stats.count(), ageSeconds);
     }
 
     private boolean dispatch(OutboxRepository.ClaimedEvent event, Instant now) {

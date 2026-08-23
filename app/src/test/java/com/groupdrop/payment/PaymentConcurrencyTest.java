@@ -18,7 +18,8 @@ import org.junit.jupiter.api.Test;
  */
 class PaymentConcurrencyTest extends AbstractPaymentIntegrationTest {
 
-    private static final int THREADS = 8;
+    /** S2 원문이 요구하는 동일 멱등 키 동시 요청 수. */
+    private static final int THREADS = 10;
 
     @org.springframework.beans.factory.annotation.Autowired
     private PaymentFinalizer finalizer;
@@ -120,7 +121,10 @@ class PaymentConcurrencyTest extends AbstractPaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT failure_code FROM payments WHERE id=?", String.class, loser))
                 .isEqualTo("DUPLICATE_PAYMENT");
         // 패자는 수익 분해에 진입한 적이 없으므로 확정 이벤트를 발행하지 않는다.
-        assertThat(count("outbox_events", "aggregate_id=" + loser)).isZero();
+        assertThat(count("outbox_events",
+                "aggregate_type='PAYMENT' AND aggregate_id=" + loser)).isZero();
+        // 대신 4주차의 보상 환불이 같은 트랜잭션에서 접수된다 (PAY-01).
+        assertThat(count("refunds", "payment_id=" + loser + " AND status='REQUESTED' AND compensation")).isEqualTo(1);
         assertThat(count("audit_logs", "action='PAYMENT_SUPERSEDED' AND resource_id=" + loser)).isEqualTo(1);
         assertThat(count("payments", "order_id=" + order.orderId()
                 + " AND status IN ('SUCCEEDED','REFUNDING','REFUNDED')")).isEqualTo(1);

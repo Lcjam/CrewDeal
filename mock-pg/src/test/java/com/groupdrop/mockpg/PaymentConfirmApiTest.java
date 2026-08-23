@@ -29,6 +29,8 @@ class PaymentConfirmApiTest {
                 .andExpect(jsonPath("$.merchantPaymentId").value("payment-100"))
                 .andExpect(jsonPath("$.orderId").value("ord-100"))
                 .andExpect(jsonPath("$.amount").value(19900))
+                .andExpect(jsonPath("$.approvedAt").isNotEmpty())
+                .andExpect(jsonPath("$.processedAt").doesNotExist())
                 .andReturn().getResponse().getContentAsString(), "$.providerPaymentId");
 
         mockMvc.perform(post("/mock-pg/payments/confirm")
@@ -45,7 +47,8 @@ class PaymentConfirmApiTest {
                         .get("/mock-pg/payments/" + firstProviderId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.providerPaymentId").value(firstProviderId));
+                .andExpect(jsonPath("$.providerPaymentId").value(firstProviderId))
+                .andExpect(jsonPath("$.approvedAt").isNotEmpty());
     }
 
     @Test

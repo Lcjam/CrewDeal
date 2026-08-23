@@ -113,6 +113,29 @@ public class PaymentRepository {
                 """, providerPaymentId, truncate(reason, 500), ts(now), paymentId) == 1;
     }
 
+    /** REF-02 환불 접수. {@code REFUNDING}은 환불 결과 불명 상태를 겸한다 (10.3, PAY-03). */
+    public boolean markRefunding(Long paymentId, Instant now) {
+        return jdbc.update("""
+                UPDATE payments SET status = 'REFUNDING', updated_at = ?
+                 WHERE id = ? AND status = 'SUCCEEDED'
+                """, ts(now), paymentId) == 1;
+    }
+
+    public boolean markRefunded(Long paymentId, Instant now) {
+        return jdbc.update("""
+                UPDATE payments SET status = 'REFUNDED', updated_at = ?
+                 WHERE id = ? AND status = 'REFUNDING'
+                """, ts(now), paymentId) == 1;
+    }
+
+    /** 10.3: {@code REFUNDING → SUCCEEDED} 복귀는 PG가 환불 실패를 <b>명시</b>했을 때만 허용한다. */
+    public boolean markRefundFailed(Long paymentId, Instant now) {
+        return jdbc.update("""
+                UPDATE payments SET status = 'SUCCEEDED', updated_at = ?
+                 WHERE id = ? AND status = 'REFUNDING'
+                """, ts(now), paymentId) == 1;
+    }
+
     /** PG 호출 기록 없이 임계 시간을 넘긴 READY 고아. PG에 기록 자체가 없으므로 FAILED 확정이 안전하다. */
     public boolean markReadyOrphanFailed(Long paymentId, Instant now) {
         return jdbc.update("""

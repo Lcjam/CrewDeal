@@ -28,6 +28,12 @@ public class OrderController {
                 .body(orderService.createOrder(authentication.getName(), campaignId, idempotencyKey, request));
     }
 
+    /** REF-01 주문 취소. 반복 호출은 같은 결과를 돌려준다. */
+    @PostMapping("/api/orders/{orderId}/cancel")
+    public ResponseEntity<OrderResponse> cancel(Authentication authentication, @PathVariable Long orderId) {
+        return ResponseEntity.ok(orderService.cancelOrder(authentication.getName(), orderId));
+    }
+
     @GetMapping("/api/orders")
     public ResponseEntity<List<OrderResponse>> list(Authentication authentication) {
         return ResponseEntity.ok(orderService.getOrders(authentication.getName()));

@@ -96,6 +96,7 @@ public class PaymentService {
 
         String requestHash = hash(orderId, order.totalAmount());
         if (!idempotency.claim(scope, key, requestHash, now, now.plus(properties.idempotencyKeyTtl()))) {
+            metrics.recordDuplicatePrevented();
             return new Preparation(replayOrReject(scope, key, requestHash, now), null, null, null, 0L);
         }
 

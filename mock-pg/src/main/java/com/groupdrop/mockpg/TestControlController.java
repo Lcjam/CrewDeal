@@ -41,12 +41,22 @@ public class TestControlController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "알 수 없는 mode: " + request.mode());
         }
+        // refundMode는 결제 mode와 독립된 축이다 — 생략 시 NORMAL로 초기화된다(통째 교체, 부분 병합 아님).
+        RefundFailureMode refundMode = RefundFailureMode.NORMAL;
+        if (request.refundMode() != null && !request.refundMode().isBlank()) {
+            try {
+                refundMode = RefundFailureMode.valueOf(request.refundMode().trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "알 수 없는 refundMode: " + request.refundMode());
+            }
+        }
         FailureModeSettings settings = new FailureModeSettings(
                 mode,
                 request.delayMs() != null ? request.delayMs() : 0,
                 request.blockWebhook() != null && request.blockWebhook(),
                 request.webhookDuplicateCount() != null ? request.webhookDuplicateCount() : 1,
-                request.webhookReverseOrder() != null && request.webhookReverseOrder());
+                request.webhookReverseOrder() != null && request.webhookReverseOrder(),
+                refundMode);
         failureModeState.replace(settings);
         return settings;
     }
@@ -64,11 +74,11 @@ public class TestControlController {
     @GetMapping("/stats")
     public StatsResponse stats() {
         return new StatsResponse(stats.confirmRequestCount(), stats.webhookSentCount(),
-                pendingWebhookQueue.pendingCount());
+                pendingWebhookQueue.pendingCount(), stats.refundRequestCount(), stats.refundExecutedCount());
     }
 
     public record FailureModeRequest(String mode, Long delayMs, Boolean blockWebhook,
-            Integer webhookDuplicateCount, Boolean webhookReverseOrder) {
+            Integer webhookDuplicateCount, Boolean webhookReverseOrder, String refundMode) {
     }
 
     public record ReplayRequest(String providerPaymentId, String merchantPaymentId) {
@@ -77,6 +87,7 @@ public class TestControlController {
     public record ReplayResult(int replayedCount) {
     }
 
-    public record StatsResponse(long confirmRequestCount, long webhookSentCount, long webhookPendingCount) {
+    public record StatsResponse(long confirmRequestCount, long webhookSentCount, long webhookPendingCount,
+            long refundRequestCount, long refundExecutedCount) {
     }
 }
