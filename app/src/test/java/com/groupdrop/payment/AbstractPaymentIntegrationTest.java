@@ -31,10 +31,10 @@ import org.springframework.test.web.servlet.MockMvc;
         "groupdrop.inbox-polling-interval=1h",
         "groupdrop.orphan-payment-sweep-interval=1h"
 })
-abstract class AbstractPaymentIntegrationTest {
+public abstract class AbstractPaymentIntegrationTest {
 
-    static final String BUYER = "buyer1@groupdrop.test";
-    static final long DEAL_PRICE = 19_900L;
+    protected static final String BUYER = "buyer1@groupdrop.test";
+    protected static final long DEAL_PRICE = 19_900L;
 
     @Autowired
     protected OrderService orderService;
@@ -58,7 +58,7 @@ abstract class AbstractPaymentIntegrationTest {
      * 그래야 각 테스트의 "이벤트 1건" 어서션이 전역 잔여물에 오염되지 않는다.
      */
     @BeforeEach
-    void resetPgClientAndDrainWorkers() {
+    protected void resetPgClientAndDrainWorkers() {
         pgClient.reset();
         while (inboxWorker.drain() > 0) {
             // 남은 이벤트 소진

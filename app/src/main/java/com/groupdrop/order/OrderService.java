@@ -111,6 +111,50 @@ public class OrderService {
         return toResponse(orderRepository.findOrder(orderId).orElseThrow());
     }
 
+    /**
+     * REF-01 주문 취소. 결제 완료 <b>전</b> 주문만 취소할 수 있고, 결제가 붙어 있더라도
+     * {@code READY}·{@code FAILED}일 때만 허용한다. {@code PROCESSING}·{@code UNKNOWN} 결제가 있으면
+     * 거부하고 확정을 기다리게 한다 — 성공 결제가 붙은 {@code CANCELLED} 주문을 만들지 않기 위해서다.
+     *
+     * <p>이미 취소·만료된 주문에 대한 반복 호출은 같은 결과를 돌려준다 (멱등).
+     */
+    @Transactional
+    public OrderResponse cancelOrder(String requesterEmail, Long orderId) {
+        User buyer = requireBuyer(requesterEmail);
+        OrderRepository.OrderSnapshot order = requireOwnedOrder(orderId, buyer.getId());
+        String status = order.header().status();
+        if ("CANCELLED".equals(status) || "EXPIRED".equals(status)) {
+            return toResponse(order);
+        }
+        if (!"PENDING_PAYMENT".equals(status)) {
+            throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_CANCELLABLE",
+                    "결제 완료 전 주문만 취소할 수 있습니다. 현재 상태: " + status);
+        }
+        if (orderRepository.hasUnsettledPayment(orderId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
+                    "확정되지 않은 결제가 있어 취소할 수 없습니다. 결제 확정 후 다시 시도하세요.");
+        }
+
+        Instant now = Instant.now(clock);
+        if (!orderRepository.cancelOrder(orderId, now)) {
+            // 위 검사와 이 UPDATE 사이에 결제가 들어왔다. 판정 원천은 조건부 UPDATE 쪽이다.
+            throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
+                    "취소 처리 중 결제가 진행되어 취소하지 못했습니다. 결제 확정 후 다시 시도하세요.");
+        }
+        for (OrderRepository.ExpiredReservation reservation : orderRepository.releaseReservations(orderId, now)) {
+            if (!orderRepository.restoreInventory(reservation.inventoryId(), reservation.quantity())) {
+                throw new IllegalStateException("취소 재고 복구 불변식 위반: inventoryId=" + reservation.inventoryId());
+            }
+        }
+        OrderRepository.OrderHeader header = order.header();
+        if (!orderRepository.decrementPurchaseCounter(
+                header.campaignId(), header.buyerId(), header.totalQuantity(), now)) {
+            throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
+        }
+        afterCommit(header.campaignId(), false);
+        return toResponse(orderRepository.findOrder(orderId).orElseThrow());
+    }
+
     @Transactional(readOnly = true)
     public List<OrderResponse> getOrders(String requesterEmail) {
         User buyer = requireBuyer(requesterEmail);

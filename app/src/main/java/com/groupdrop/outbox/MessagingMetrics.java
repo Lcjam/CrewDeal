@@ -1,7 +1,9 @@
 package com.groupdrop.outbox;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Component;
@@ -12,9 +14,13 @@ public class MessagingMetrics {
 
     private final MeterRegistry registry;
     private final ConcurrentMap<String, Counter> counters = new ConcurrentHashMap<>();
+    private final AtomicLong pendingCount = new AtomicLong();
+    private final AtomicLong oldestEventAgeSeconds = new AtomicLong();
 
     public MessagingMetrics(MeterRegistry registry) {
         this.registry = registry;
+        Gauge.builder("outbox.pending.count", pendingCount, AtomicLong::get).register(registry);
+        Gauge.builder("outbox.oldest.event.age", oldestEventAgeSeconds, AtomicLong::get).register(registry);
     }
 
     public void recordOutboxProcessed(String eventType) {
@@ -35,6 +41,12 @@ public class MessagingMetrics {
 
     public void recordInboxFailure(String eventType) {
         counter("inbox.event.failure", eventType).increment();
+    }
+
+    /** 16.4: 폴링 시점의 DB PENDING 상태를 그대로 게이지에 반영한다. */
+    public void updateOutboxPending(long count, long oldestAgeSeconds) {
+        pendingCount.set(Math.max(0L, count));
+        oldestEventAgeSeconds.set(Math.max(0L, oldestAgeSeconds));
     }
 
     private Counter counter(String name, String eventType) {

@@ -174,8 +174,10 @@ class PaymentFailureRecoveryTest extends AbstractPaymentIntegrationTest {
         assertThat(outboxWorker.drain()).isEqualTo(1);
 
         assertThat(orderStatus(order.orderId())).isEqualTo("REFUNDING");
+        // 4주차: 자동 환불이 접수된다. ops_hold는 이 시점이 아니라 환불이 실패했을 때만 세운다 (10.2).
         assertThat(jdbc.queryForObject("SELECT ops_hold FROM orders WHERE id=?", Boolean.class, order.orderId()))
-                .isTrue();
+                .isFalse();
+        assertThat(count("refunds", "order_id=" + order.orderId() + " AND status='REQUESTED'")).isEqualTo(1);
         assertThat(count("audit_logs", "action='ORDER_EXPIRED_BUT_PAID' AND resource_id=" + order.orderId()))
                 .isEqualTo(1);
         // 이미 풀린 재고를 도로 뺏지 않는다.

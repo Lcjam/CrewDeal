@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
 /** PAY-04 웹훅. S3(중복 웹훅), 11.5(역순 웹훅), 16.3(서명·타임스탬프)을 다룬다. */
@@ -35,14 +38,24 @@ class PaymentWebhookApiTest extends AbstractPaymentIntegrationTest {
         assertThat(outboxWorker.drain()).isEqualTo(1);
         assertThat(orderStatus(order.orderId())).isEqualTo("PAID");
         assertThat(inventoryOf(order.inventoryId())).containsExactly(10, 9, 0, 1);
+        // S3의 세 번째 어서션 (4주차 편입): 원장 거래도 정확히 1건이다 (LED-02).
+        assertThat(count("ledger_transactions",
+                "transaction_type='PAYMENT' AND reference_id=" + paymentId)).isEqualTo(1);
+        assertThat(count("ledger_entries", "transaction_id IN (SELECT id FROM ledger_transactions"
+                + " WHERE transaction_type='PAYMENT' AND reference_id=" + paymentId + ")")).isEqualTo(5);
 
         // 재전송이 더 와도 상태는 그대로다.
         postWebhook(body).andExpect(status().isOk());
         while (inboxWorker.drain() > 0) {
             // 처리 완료까지
         }
+        while (outboxWorker.drain() > 0) {
+            // 재전달된 확정 이벤트가 있어도 효과는 한 번이어야 한다
+        }
         assertThat(orderStatus(order.orderId())).isEqualTo("PAID");
         assertThat(inventoryOf(order.inventoryId())).containsExactly(10, 9, 0, 1);
+        assertThat(count("ledger_transactions",
+                "transaction_type='PAYMENT' AND reference_id=" + paymentId)).isEqualTo(1);
     }
 
     @Test
@@ -113,6 +126,73 @@ class PaymentWebhookApiTest extends AbstractPaymentIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         assertThat(count("inbox_events", "provider_event_id='" + eventId + "'")).isZero();
+    }
+
+    @Test
+    void 정확히_5분_어긋난_타임스탬프도_거부한다() {
+        Instant now = Instant.parse("2026-08-19T00:00:00Z");
+        com.groupdrop.common.GroupdropProperties properties =
+                org.mockito.Mockito.mock(com.groupdrop.common.GroupdropProperties.class);
+        org.mockito.Mockito.when(properties.webhook()).thenReturn(
+                new com.groupdrop.common.GroupdropProperties.Webhook("boundary-secret", Duration.ofMinutes(5)));
+        WebhookSignatureVerifier boundaryVerifier = new WebhookSignatureVerifier(
+                properties, Clock.fixed(now, ZoneOffset.UTC));
+        String timestamp = String.valueOf(now.minus(Duration.ofMinutes(5)).getEpochSecond());
+        String body = "{\"eventId\":\"exact-boundary\"}";
+
+        assertThat(boundaryVerifier.verify(boundaryVerifier.sign(timestamp, body), timestamp, body))
+                .isEqualTo(WebhookSignatureVerifier.Verdict.STALE_TIMESTAMP);
+    }
+
+    @Test
+    void 확정된_결제에_다른_종국상태_웹훅이_오면_Inbox를_IGNORED로_종결한다() throws Exception {
+        OrderFixture order = order(10, 1);
+        pgClient.setMode(StubPgClient.Mode.SUCCEED_BUT_TIMEOUT);
+        Long paymentId = pay(order).body().id();
+        String providerPaymentId = pgClient.providerPaymentIdOf("mpay_" + paymentId);
+
+        postWebhook(webhookPayload("evt-final-success-" + paymentId, providerPaymentId, order.orderId(),
+                "SUCCEEDED", order.totalAmount())).andExpect(status().isOk());
+        while (inboxWorker.drain() > 0) {
+            // 성공 확정
+        }
+
+        String forbiddenEventId = "evt-final-failed-" + paymentId;
+        postWebhook(webhookPayload(forbiddenEventId, providerPaymentId, order.orderId(),
+                "FAILED", order.totalAmount())).andExpect(status().isOk());
+        while (inboxWorker.drain() > 0) {
+            // 금지 전이 무시
+        }
+
+        assertThat(paymentStatus(paymentId)).isEqualTo("SUCCEEDED");
+        assertThat(jdbc.queryForObject("SELECT status FROM inbox_events WHERE provider_event_id=?", String.class,
+                forbiddenEventId)).isEqualTo("IGNORED");
+        assertThat(count("audit_logs", "action='WEBHOOK_IGNORED' AND resource_id=" + paymentId)).isPositive();
+    }
+
+    @Test
+    void 이미_SUPERSEDED인_패자에_별도_성공_웹훅이_오면_Inbox를_IGNORED로_종결한다() throws Exception {
+        OrderFixture order = order(10, 1);
+        Long winnerId = pay(order).body().id();
+        assertThat(paymentStatus(winnerId)).isEqualTo("SUCCEEDED");
+
+        String loserProviderId = "pg_already_superseded_" + winnerId;
+        Long loserId = jdbc.queryForObject("""
+                INSERT INTO payments(order_id,status,amount,provider_payment_id,failure_code,created_at,updated_at)
+                VALUES(?,'SUPERSEDED',?,?,'DUPLICATE_PAYMENT',now(),now()) RETURNING id
+                """, Long.class, order.orderId(), order.totalAmount(), loserProviderId);
+        String eventId = "evt-already-superseded-" + loserId;
+
+        postWebhook(webhookPayload(eventId, loserProviderId, order.orderId(),
+                "SUCCEEDED", order.totalAmount())).andExpect(status().isOk());
+        while (inboxWorker.drain() > 0) {
+            // 이미 종결된 패자의 금지 전이 무시
+        }
+
+        assertThat(paymentStatus(loserId)).isEqualTo("SUPERSEDED");
+        assertThat(jdbc.queryForObject("SELECT status FROM inbox_events WHERE provider_event_id=?", String.class,
+                eventId)).isEqualTo("IGNORED");
+        assertThat(count("audit_logs", "action='WEBHOOK_IGNORED' AND resource_id=" + loserId)).isPositive();
     }
 
     @Test

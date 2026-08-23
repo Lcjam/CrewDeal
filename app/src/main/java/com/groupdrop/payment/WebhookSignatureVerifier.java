@@ -39,7 +39,8 @@ public class WebhookSignatureVerifier {
             return Verdict.BAD_TIMESTAMP;
         }
         Duration skew = Duration.between(Instant.ofEpochSecond(epochSeconds), Instant.now(clock)).abs();
-        if (skew.compareTo(properties.webhook().timestampTolerance()) > 0) {
+        // 16.3은 "5분 이상"을 거부한다. 경계값(정확히 5분)도 허용 창 밖이다.
+        if (skew.compareTo(properties.webhook().timestampTolerance()) >= 0) {
             return Verdict.STALE_TIMESTAMP;
         }
         String expected = sign(timestamp.trim(), body);

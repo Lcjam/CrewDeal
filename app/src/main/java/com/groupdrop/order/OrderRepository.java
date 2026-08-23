@@ -238,6 +238,45 @@ public class OrderRepository {
                 """, quantity, ts(now), campaignId, buyerId, quantity) == 1;
     }
 
+    /**
+     * REF-01 주문 취소. 결제 상태 게이트를 SQL 안에 두는 이유는 조회 후 판단하는 순간
+     * 그 사이에 결제가 PROCESSING으로 들어올 수 있기 때문이다 — 성공 결제가 붙은 CANCELLED 주문 방지.
+     */
+    public boolean cancelOrder(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders
+                   SET status = 'CANCELLED', updated_at = ?
+                 WHERE id = ? AND status = 'PENDING_PAYMENT'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM payments p
+                        WHERE p.order_id = orders.id
+                          AND p.status NOT IN ('READY', 'FAILED')
+                   )
+                """, ts(now), orderId) == 1;
+    }
+
+    /** 취소 시 활성 예약 해제. 만료와 같은 효과지만 예약 상태를 RELEASED로 구분한다 (10.4). */
+    public List<ExpiredReservation> releaseReservations(Long orderId, Instant now) {
+        return jdbc.query("""
+                UPDATE stock_reservations sr
+                   SET status = 'RELEASED', updated_at = ?
+                  FROM order_items oi
+                 WHERE sr.order_item_id = oi.id AND oi.order_id = ? AND sr.status = 'ACTIVE'
+                RETURNING sr.campaign_inventory_id, sr.quantity
+                """, (rs, rowNum) -> new ExpiredReservation(
+                rs.getLong("campaign_inventory_id"), rs.getInt("quantity")), ts(now), orderId);
+    }
+
+    /** 취소 가능 여부 판정용. 결제가 PROCESSING·UNKNOWN이면 확정을 기다려야 한다 (REF-01). */
+    public boolean hasUnsettledPayment(Long orderId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM payments
+                     WHERE order_id = ? AND status NOT IN ('READY', 'FAILED')
+                )
+                """, Boolean.class, orderId));
+    }
+
     public Optional<String> findStatus(Long orderId) {
         return jdbc.query("SELECT status FROM orders WHERE id = ?",
                 (rs, rowNum) -> rs.getString("status"), orderId).stream().findFirst();
@@ -259,6 +298,32 @@ public class OrderRepository {
         return jdbc.update("""
                 UPDATE orders SET status = 'REFUNDING', updated_at = ?
                  WHERE id = ? AND status = 'EXPIRED'
+                """, ts(now), orderId) == 1;
+    }
+
+    /** REF-02 환불 접수 (10.2의 {@code PAID → REFUNDING}). */
+    public boolean markRefundingFromPaid(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'REFUNDING', updated_at = ?
+                 WHERE id = ? AND status = 'PAID'
+                """, ts(now), orderId) == 1;
+    }
+
+    public boolean markRefunded(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'REFUNDED', updated_at = ?
+                 WHERE id = ? AND status = 'REFUNDING'
+                """, ts(now), orderId) == 1;
+    }
+
+    /**
+     * 10.2: 환불 실패 시 {@code REFUNDING → PAID} 복귀. 호출자는 그전에 이 주문이 PAID 출신인지를
+     * 예약 상태로 판별해야 한다 — 만료 출신은 복귀시키지 않고 {@code ops_hold}로 남긴다.
+     */
+    public boolean markPaidFromRefunding(Long orderId, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'PAID', updated_at = ?
+                 WHERE id = ? AND status = 'REFUNDING'
                 """, ts(now), orderId) == 1;
     }
 

@@ -3,6 +3,7 @@ package com.groupdrop.payment;
 import com.groupdrop.common.AuditLogRepository;
 import com.groupdrop.common.Json;
 import com.groupdrop.outbox.OutboxRepository;
+import com.groupdrop.refund.RefundInitiator;
 import java.time.Clock;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -27,15 +28,17 @@ public class PaymentFinalizer {
     private final PaymentRepository payments;
     private final OutboxRepository outbox;
     private final AuditLogRepository auditLogs;
+    private final RefundInitiator refundInitiator;
     private final PaymentMetrics metrics;
     private final Json json;
     private final Clock clock;
 
     public PaymentFinalizer(PaymentRepository payments, OutboxRepository outbox, AuditLogRepository auditLogs,
-                            PaymentMetrics metrics, Json json, Clock clock) {
+                            RefundInitiator refundInitiator, PaymentMetrics metrics, Json json, Clock clock) {
         this.payments = payments;
         this.outbox = outbox;
         this.auditLogs = auditLogs;
+        this.refundInitiator = refundInitiator;
         this.metrics = metrics;
         this.json = json;
         this.clock = clock;
@@ -56,11 +59,11 @@ public class PaymentFinalizer {
                     "같은 주문에 이미 유효한 성공 결제가 있습니다.", now);
             if (superseded) {
                 metrics.recordSuperseded();
+                compensate(payment, providerPaymentId, source, now);
                 auditLogs.record(source, "PAYMENT_SUPERSEDED", "PAYMENT", payment.id(),
                         "이중 결제 패자로 종결했습니다. providerPaymentId=" + providerPaymentId, now);
-                log.warn("결제 {}를 이중 결제 패자(SUPERSEDED)로 종결했습니다. 보상 환불은 4주차 범위입니다.", payment.id());
             }
-            return Result.SUPERSEDED;
+            return superseded ? Result.SUPERSEDED : Result.ALREADY_SETTLED;
         }
 
         if (!payments.markSucceeded(payment.id(), providerPaymentId, approved, now)) {
@@ -94,6 +97,28 @@ public class PaymentFinalizer {
         appendFinalizedEvent(payment, "FAILED", now);
         metrics.recordFailed(source, "ORPHAN_READY");
         return Result.APPLIED;
+    }
+
+    /**
+     * PAY-01 이중 결제 보상. 보상 환불의 접수({@code refunds} 행 + {@code refund.requested})는
+     * {@code SUPERSEDED} 전이와 <b>같은 트랜잭션</b>이어야 한다 — 전이만 커밋되고 접수가 유실되면
+     * PG에 승인된 채 아무도 되살리지 않는 결제가 남는다. PG 환불 호출은 실행 워커의 몫이다 (13.4).
+     *
+     * <p>패자 결제는 수익 분해(LED-02)에 진입한 적이 없으므로 원장에는 기록하지 않는다.
+     */
+    private void compensate(PaymentRepository.PaymentSnapshot payment, String providerPaymentId,
+                            String source, Instant now) {
+        if (providerPaymentId == null) {
+            // PG 식별자를 모르면 환불 대상을 지목할 수 없다. 추측하지 않고 운영자 확인 대상으로 남긴다.
+            auditLogs.record(source, "COMPENSATION_REFUND_SKIPPED", "PAYMENT", payment.id(),
+                    "PG 결제 식별자가 없어 보상 환불을 접수하지 못했습니다.", now);
+            log.error("결제 {}의 보상 환불을 접수하지 못했습니다 — PG 식별자가 없습니다.", payment.id());
+            return;
+        }
+        Long refundId = refundInitiator.initiateCompensation(payment.id(), payment.orderId(), payment.amount(),
+                "이중 결제 패자의 자동 보상 환불 (PAY-01)", "duplicate-payment");
+        log.warn("결제 {}를 이중 결제 패자(SUPERSEDED)로 종결하고 보상 환불 {}을 접수했습니다.",
+                payment.id(), refundId);
     }
 
     private void appendFinalizedEvent(PaymentRepository.PaymentSnapshot payment, String status, Instant now) {

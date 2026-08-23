@@ -80,6 +80,18 @@ public class OutboxRepository {
         return count == null ? 0L : count;
     }
 
+    /** PENDING 이벤트 수와 가장 오래된 created_at을 한 DB 스냅샷으로 읽는다 (16.4). */
+    public PendingStats pendingStats() {
+        return jdbc.queryForObject("""
+                SELECT count(*) AS pending_count, min(created_at) AS oldest_created_at
+                  FROM outbox_events
+                 WHERE status = 'PENDING'
+                """, (rs, rowNum) -> {
+            Timestamp oldest = rs.getTimestamp("oldest_created_at");
+            return new PendingStats(rs.getLong("pending_count"), oldest == null ? null : oldest.toInstant());
+        });
+    }
+
     static String truncate(String value) {
         if (value == null) {
             return null;
@@ -92,4 +104,6 @@ public class OutboxRepository {
     }
 
     public record ClaimedEvent(Long id, String eventType, Long aggregateId, String payload, int attempts) { }
+
+    public record PendingStats(long count, Instant oldestCreatedAt) { }
 }

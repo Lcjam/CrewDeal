@@ -44,6 +44,21 @@ public class PaymentMetrics {
         counter("payment.unknown", "source", "request").increment();
     }
 
+    /** 16.4: 실제 PG confirm 호출 직전에만 센다. 재생 응답은 외부 호출이 아니므로 제외한다. */
+    public void recordAttempt() {
+        registry.counter("payment.attempt").increment();
+    }
+
+    /** 16.4: 기존 멱등 키를 다시 받은 모든 경로(재생·충돌)를 관측한다. */
+    public void recordDuplicatePrevented() {
+        registry.counter("payment.duplicate.prevented").increment();
+    }
+
+    /** 16.4: Inbox UNIQUE가 이미 수신한 웹훅을 막은 경우다. */
+    public void recordWebhookDuplicate() {
+        registry.counter("webhook.duplicate").increment();
+    }
+
     public void recordWebhookRejected() {
         webhookRejected.increment();
     }
@@ -58,6 +73,8 @@ public class PaymentMetrics {
     }
 
     public <T> T timePgConfirm(Supplier<T> action) {
+        // confirm을 호출하는 모든 경로(request·provider-query recovery)를 이 경계로 모은다 (16.4).
+        recordAttempt();
         long started = System.nanoTime();
         try {
             return action.get();

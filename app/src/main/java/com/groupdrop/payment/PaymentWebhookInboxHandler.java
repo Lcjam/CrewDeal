@@ -95,11 +95,11 @@ public class PaymentWebhookInboxHandler implements InboxHandler {
     private Outcome apply(PaymentRepository.PaymentSnapshot payment, PaymentWebhookPayload payload,
                           PaymentFinalizer.Result result, Instant now) {
         if (result == PaymentFinalizer.Result.ALREADY_SETTLED) {
-            // 중복·지연 이벤트가 이미 확정된 결제에 닿은 경우. 조건부 UPDATE가 이미 막았으므로
-            // 여기서 할 일은 없다 (11.4의 "전이는 한 번만").
-            log.debug("결제 {}는 이미 확정되어 웹훅 이벤트 {}를 무시합니다.", payment.id(), payload.eventId());
-            auditLogs.record(SOURCE, "WEBHOOK_NOOP", "PAYMENT", payment.id(),
-                    "이미 확정된 결제에 대한 이벤트입니다: " + payload.eventId(), now);
+            // 같은 eventId 중복은 Inbox UNIQUE에서 이미 제거된다. 여기까지 온 별도 이벤트가
+            // 조건부 UPDATE에 실패했다면 현재 상태에서 허용되지 않는 전이를 요구한 것이므로
+            // PROCESSED가 아니라 IGNORED로 종결한다 (PAY-04, 11.5).
+            return ignore(payment.id(), payload,
+                    "이미 확정된 상태 %s에서 허용되지 않는 전이입니다.".formatted(payment.status()), now);
         }
         return Outcome.handled();
     }
