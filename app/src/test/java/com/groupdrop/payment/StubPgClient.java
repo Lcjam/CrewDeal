@@ -138,7 +138,7 @@ public class StubPgClient implements PgClient {
     @Override
     public List<ProviderTransaction> listTransactions(Instant processedBefore) {
         return transactions.values().stream()
-                .filter(tx -> !tx.processedAt().isAfter(processedBefore))
+                .filter(tx -> tx.processedAt() == null || !tx.processedAt().isAfter(processedBefore))
                 .sorted(Comparator.comparing(ProviderTransaction::providerPaymentId))
                 .toList();
     }
@@ -150,11 +150,19 @@ public class StubPgClient implements PgClient {
      */
     public ProviderTransaction injectTransaction(String providerPaymentId, Long orderId, long amount,
                                                  String status, Instant processedAt, long refundedAmount) {
+        return injectTransaction(providerPaymentId, orderId, amount, status, processedAt,
+                refundedAmount, refundedAmount > 0 ? processedAt : null);
+    }
+
+    /** 결제 승인과 환불 완료 시각을 독립적으로 주입해 REC-01의 두 발생 시각을 검증한다. */
+    public ProviderTransaction injectTransaction(String providerPaymentId, Long orderId, long amount,
+                                                 String status, Instant processedAt, long refundedAmount,
+                                                 Instant refundedAt) {
         String id = providerPaymentId == null ? nextProviderPaymentId() : providerPaymentId;
         ProviderTransaction tx = new ProviderTransaction(id, "injected_" + id,
                 orderId == null ? null : String.valueOf(orderId), amount, status, processedAt,
                 refundedAmount, refundedAmount > 0 ? "rf_injected_" + id : null,
-                refundedAmount > 0 ? processedAt : null);
+                refundedAmount > 0 ? refundedAt : null);
         transactions.put(id, tx);
         return tx;
     }

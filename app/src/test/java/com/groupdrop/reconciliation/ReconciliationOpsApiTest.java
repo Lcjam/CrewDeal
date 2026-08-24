@@ -151,6 +151,44 @@ class ReconciliationOpsApiTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void 운영자는_FAILED_Outbox와_Inbox_이벤트를_감사_로그와_함께_재처리한다() throws Exception {
+        Long outboxId = jdbc.queryForObject("""
+                INSERT INTO outbox_events
+                    (event_type,aggregate_type,aggregate_id,payload,status,attempts,available_at,
+                     last_error,created_at,processed_at)
+                VALUES('test.failed','TEST',-1001,'{}','FAILED',5,now(),'boom',now(),now()) RETURNING id
+                """, Long.class);
+        Long inboxId = jdbc.queryForObject("""
+                INSERT INTO inbox_events
+                    (provider_event_id,event_type,payload,status,attempts,available_at,last_error,
+                     received_at,processed_at)
+                VALUES('failed-' || gen_random_uuid(),'test.failed','{}','FAILED',5,now(),'boom',now(),now())
+                RETURNING id
+                """, Long.class);
+        MockHttpSession admin = login(ADMIN);
+
+        mockMvc.perform(post("/api/admin/outbox-events/{id}/retry", outboxId).session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.channel").value("OUTBOX"))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        mockMvc.perform(post("/api/admin/inbox-events/{id}/retry", inboxId).session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.channel").value("INBOX"))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        assertThat(jdbc.queryForObject("SELECT status FROM outbox_events WHERE id=?", String.class, outboxId))
+                .isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT attempts FROM outbox_events WHERE id=?", Integer.class, outboxId))
+                .isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM inbox_events WHERE id=?", String.class, inboxId))
+                .isEqualTo("PENDING");
+        assertThat(count("audit_logs", "action='OUTBOX_EVENT_RETRIED' AND resource_id=" + outboxId))
+                .isEqualTo(1);
+        assertThat(count("audit_logs", "action='INBOX_EVENT_RETRIED' AND resource_id=" + inboxId))
+                .isEqualTo(1);
+    }
+
+    @Test
     void 수령_주체는_자기_확정_정산_내역만_조회한다() throws Exception {
         OrderFixture order = order(10, 1);
         pay(order);

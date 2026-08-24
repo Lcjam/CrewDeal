@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 운영 콘솔</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1f2937; background: #f6f7fb; }
+    body { margin: 0; } main { max-width: 1100px; padding: 2rem 1rem 4rem; margin: auto; }
+    h1 { margin: 0; } h2 { margin-top: 0; font-size: 1.1rem; } .subtitle { color: #4b5563; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1rem; }
+    section { background: white; border: 1px solid #e5e7eb; border-radius: .65rem; padding: 1rem; box-shadow: 0 1px 2px #1118270b; }
+    .wide { grid-column: 1 / -1; } label { display: block; margin: .55rem 0 .2rem; font-weight: 650; }
+    input, button { box-sizing: border-box; min-height: 2.4rem; border-radius: .35rem; font: inherit; }
+    input { width: 100%; border: 1px solid #9ca3af; padding: .4rem .55rem; } button { border: 0; background: #1d4ed8; color: white; padding: .35rem .75rem; cursor: pointer; margin: .6rem .35rem 0 0; }
+    button.secondary { background: #475569; } button.danger { background: #b91c1c; } button:focus-visible, input:focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+    #notice { min-height: 1.5rem; padding: .45rem .65rem; margin: 1rem 0; border-radius: .35rem; } #notice.error { background: #fee2e2; color: #991b1b; } #notice.success { background: #dcfce7; color: #166534; }
+    dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; } dt { color: #64748b; } dd { margin: 0; font-weight: 650; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; } th, td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: .55rem; vertical-align: top; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f8fafc; padding: .65rem; border-radius: .35rem; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>GroupDrop 운영 콘솔</h1>
+    <p class="subtitle">세션 로그인 후 운영 API를 직접 확인·조작합니다. <a href="/swagger-ui/index.html">OpenAPI 문서</a></p>
+  </header>
+  <p id="notice" role="status" aria-live="polite">로그인이 필요합니다.</p>
+
+  <div class="grid">
+    <section>
+      <h2>운영자 로그인</h2>
+      <form id="login-form">
+        <label for="email">이메일</label><input id="email" type="email" value="admin@groupdrop.test" required autocomplete="username">
+        <label for="password">비밀번호</label><input id="password" type="password" value="groupdrop123!" required autocomplete="current-password">
+        <button type="submit">로그인</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>운영 요약</h2>
+      <button id="summary-button" type="button">새로고침</button>
+      <dl id="summary" aria-live="polite"><dt>상태</dt><dd>미조회</dd></dl>
+    </section>
+
+    <section>
+      <h2>결제 동기화</h2>
+      <form id="payment-sync-form">
+        <label for="payment-id">결제 ID</label><input id="payment-id" inputmode="numeric" required>
+        <button type="submit">PG 재조회·동기화</button>
+      </form>
+      <pre id="payment-result" aria-live="polite"></pre>
+    </section>
+
+    <section>
+      <h2>정산 배치</h2>
+      <form id="batch-form">
+        <label for="batch-id">배치 ID</label><input id="batch-id" inputmode="numeric" required>
+        <button type="submit">배치 조회</button>
+      </form>
+      <div aria-label="배치 상태 조작">
+        <button data-batch-action="retry" type="button">재시도</button>
+        <button class="secondary" data-batch-action="hold" type="button">보류</button>
+        <button class="secondary" data-batch-action="release" type="button">보류 해제</button>
+      </div>
+      <pre id="batch-result" aria-live="polite"></pre>
+    </section>
+
+    <section class="wide">
+      <h2>OPEN 대사 불일치</h2>
+      <button id="discrepancies-button" type="button">목록 새로고침</button>
+      <div tabindex="0" aria-label="미해결 대사 불일치 목록">
+        <table><thead><tr><th>ID</th><th>유형</th><th>대상</th><th>상세</th><th>조작</th></tr></thead><tbody id="discrepancies"><tr><td colspan="5">미조회</td></tr></tbody></table>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+  const notice = document.querySelector('#notice');
+  const jsonHeaders = { 'Content-Type': 'application/json' };
+  function say(message, error = false) { notice.textContent = message; notice.className = error ? 'error' : 'success'; }
+  async function api(path, options = {}) {
+    const response = await fetch(path, { credentials: 'same-origin', ...options });
+    const text = await response.text();
+    let body = null; try { body = text ? JSON.parse(text) : null; } catch (_) { body = text; }
+    if (!response.ok) throw new Error(body && body.detail ? `${response.status}: ${body.detail}` : `${response.status}: ${text || response.statusText}`);
+    return body;
+  }
+  function renderJson(element, value) { element.textContent = value ? JSON.stringify(value, null, 2) : '응답이 없습니다.'; }
+  async function refreshSummary() {
+    const data = await api('/api/admin/ops/summary');
+    const root = document.querySelector('#summary'); root.replaceChildren();
+    Object.entries(data || {}).forEach(([key, value]) => { const dt = document.createElement('dt'); dt.textContent = key; const dd = document.createElement('dd'); dd.textContent = String(value); root.append(dt, dd); });
+    say('운영 요약을 갱신했습니다.');
+  }
+  async function refreshDiscrepancies() {
+    const rows = await api('/api/admin/reconciliation-discrepancies?status=OPEN');
+    const body = document.querySelector('#discrepancies'); body.replaceChildren();
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5">OPEN 불일치가 없습니다.</td></tr>'; return; }
+    rows.forEach(row => { const tr = document.createElement('tr');
+      [['id', row.id], ['type', row.type], ['target', row.paymentId || row.orderId || row.providerPaymentId || '-'], ['detail', row.detail || row.reason || '-']].forEach(([, value]) => { const td = document.createElement('td'); td.textContent = String(value); tr.appendChild(td); });
+      const actions = document.createElement('td'); [['재시도', 'retry'], ['해결', 'resolve']].forEach(([label, action]) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.addEventListener('click', () => handleDiscrepancy(row.id, action)); actions.appendChild(button); }); tr.appendChild(actions); body.appendChild(tr); });
+    say('OPEN 불일치 목록을 갱신했습니다.');
+  }
+  async function handleDiscrepancy(id, action) {
+    const options = { method: 'POST' };
+    if (action === 'resolve') { const note = window.prompt('해결 메모를 입력하세요.', '운영자 확인 완료'); if (note === null) return; options.headers = jsonHeaders; options.body = JSON.stringify({ note }); }
+    const result = await api(`/api/admin/reconciliation-discrepancies/${id}/${action}`, options); say(`불일치 ${id} ${action} 처리 완료.`); await refreshDiscrepancies(); console.info(result);
+  }
+  document.querySelector('#login-form').addEventListener('submit', async event => { event.preventDefault(); try { const result = await api('/api/auth/login', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ email: document.querySelector('#email').value, password: document.querySelector('#password').value }) }); say(`${result.email || '운영자'} 로그인 성공.`); await Promise.all([refreshSummary(), refreshDiscrepancies()]); } catch (error) { say(`로그인 실패: ${error.message}`, true); } });
+  document.querySelector('#summary-button').addEventListener('click', () => refreshSummary().catch(error => say(error.message, true)));
+  document.querySelector('#discrepancies-button').addEventListener('click', () => refreshDiscrepancies().catch(error => say(error.message, true)));
+  document.querySelector('#payment-sync-form').addEventListener('submit', async event => { event.preventDefault(); try { renderJson(document.querySelector('#payment-result'), await api(`/api/admin/payments/${document.querySelector('#payment-id').value}/sync`, { method: 'POST' })); say('결제를 동기화했습니다.'); } catch (error) { say(error.message, true); } });
+  document.querySelector('#batch-form').addEventListener('submit', async event => { event.preventDefault(); try { renderJson(document.querySelector('#batch-result'), await api(`/api/admin/settlements/${document.querySelector('#batch-id').value}`)); say('정산 배치를 조회했습니다.'); } catch (error) { say(error.message, true); } });
+  document.querySelectorAll('[data-batch-action]').forEach(button => button.addEventListener('click', async () => { const id = document.querySelector('#batch-id').value; if (!id) return say('먼저 정산 배치 ID를 입력하세요.', true); try { const action = button.dataset.batchAction; const options = { method: 'POST' }; if (action === 'hold') { const reason = window.prompt('보류 사유를 입력하세요.', '운영자 보류'); if (reason === null) return; options.headers = jsonHeaders; options.body = JSON.stringify({ reason }); } renderJson(document.querySelector('#batch-result'), await api(`/api/admin/settlements/${id}/${action}`, options)); say(`정산 배치 ${action} 처리 완료.`); } catch (error) { say(error.message, true); } }));
+</script>
+</body>
+</html>

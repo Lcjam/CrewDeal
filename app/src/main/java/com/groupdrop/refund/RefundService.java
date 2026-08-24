@@ -94,7 +94,7 @@ public class RefundService {
 
         Long refundId;
         try {
-            refundId = initiator.initiate(paymentId, payment.orderId(), payment.amount(),
+            refundId = initiator.initiatePaidOrder(paymentId, payment.orderId(), payment.amount(),
                     request == null ? null : request.reason(), SOURCE);
         } catch (DuplicateKeyException exception) {
             // refunds(payment_id) WHERE status <> 'FAILED' 부분 유니크 (13.2). 위 선조회와의 경쟁 창을

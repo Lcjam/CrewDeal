@@ -1,6 +1,7 @@
 package com.groupdrop.payment;
 
 import com.groupdrop.common.AuditLogRepository;
+import com.groupdrop.common.CampaignTransactionBarrier;
 import com.groupdrop.common.Json;
 import com.groupdrop.outbox.OutboxRepository;
 import com.groupdrop.refund.RefundInitiator;
@@ -26,6 +27,7 @@ public class PaymentFinalizer {
     static final String EVENT_PAYMENT_FINALIZED = "payment.finalized";
 
     private final PaymentRepository payments;
+    private final CampaignTransactionBarrier campaignBarrier;
     private final OutboxRepository outbox;
     private final AuditLogRepository auditLogs;
     private final RefundInitiator refundInitiator;
@@ -33,9 +35,11 @@ public class PaymentFinalizer {
     private final Json json;
     private final Clock clock;
 
-    public PaymentFinalizer(PaymentRepository payments, OutboxRepository outbox, AuditLogRepository auditLogs,
+    public PaymentFinalizer(PaymentRepository payments, CampaignTransactionBarrier campaignBarrier,
+                            OutboxRepository outbox, AuditLogRepository auditLogs,
                             RefundInitiator refundInitiator, PaymentMetrics metrics, Json json, Clock clock) {
         this.payments = payments;
+        this.campaignBarrier = campaignBarrier;
         this.outbox = outbox;
         this.auditLogs = auditLogs;
         this.refundInitiator = refundInitiator;
@@ -49,13 +53,14 @@ public class PaymentFinalizer {
      */
     public Result succeed(PaymentRepository.PaymentSnapshot payment, String providerPaymentId,
                           Instant approvedAt, String source) {
+        campaignBarrier.requireByOrderId(payment.orderId());
         Instant now = Instant.now(clock);
         Instant approved = approvedAt == null ? now : approvedAt;
 
         // 부분 유니크(13.2)에 부딪히면 트랜잭션이 통째로 죽으므로 먼저 승자 유무를 본다.
         // 이 선조회와 UPDATE 사이의 경쟁은 제약이 막고, 롤백된 시도는 재시도에서 이 분기를 탄다.
         if (payments.existsSucceededForOrder(payment.orderId(), payment.id())) {
-            boolean superseded = payments.markSuperseded(payment.id(), providerPaymentId,
+            boolean superseded = payments.markSuperseded(payment.id(), providerPaymentId, approved,
                     "같은 주문에 이미 유효한 성공 결제가 있습니다.", now);
             if (superseded) {
                 metrics.recordSuperseded();
@@ -76,6 +81,7 @@ public class PaymentFinalizer {
 
     public Result fail(PaymentRepository.PaymentSnapshot payment, String failureCode,
                        String failureReason, String source) {
+        campaignBarrier.requireByOrderId(payment.orderId());
         Instant now = Instant.now(clock);
         if (!payments.markFailed(payment.id(), failureCode, failureReason, now)) {
             return Result.ALREADY_SETTLED;
@@ -90,6 +96,7 @@ public class PaymentFinalizer {
      * 방치하면 영구 MISSING_PROVIDER 불일치로 정산을 HELD시킨다. 13.4에 따라 이 경로도 이벤트를 낸다.
      */
     public Result failReadyOrphan(PaymentRepository.PaymentSnapshot payment, String source) {
+        campaignBarrier.requireByOrderId(payment.orderId());
         Instant now = Instant.now(clock);
         if (!payments.markReadyOrphanFailed(payment.id(), now)) {
             return Result.ALREADY_SETTLED;

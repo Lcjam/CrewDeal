@@ -163,6 +163,31 @@ class PaymentFailureRecoveryTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void ORD03_SUCCEEDED_결제의_주문_확정_이벤트가_대기_중이면_만료와_재고_복구를_유예한다() {
+        OrderFixture order = order(10, 1);
+        PaymentService.Outcome outcome = pay(order);
+
+        assertThat(outcome.body().status()).isEqualTo("SUCCEEDED");
+        assertThat(orderStatus(order.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThat(count("outbox_events", "aggregate_id=" + outcome.body().id()
+                + " AND event_type='payment.finalized' AND status='PENDING'")).isEqualTo(1);
+        jdbc.update("UPDATE orders SET expires_at=? WHERE id=?",
+                Timestamp.from(Instant.now().minusSeconds(60)), order.orderId());
+
+        assertThat(expiryService.expireDueReservations()).isZero();
+
+        assertThat(orderStatus(order.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThat(jdbc.queryForObject("SELECT status FROM stock_reservations sr JOIN order_items oi "
+                + "ON oi.id=sr.order_item_id WHERE oi.order_id=?", String.class, order.orderId()))
+                .isEqualTo("ACTIVE");
+        assertThat(inventoryOf(order.inventoryId())).containsExactly(10, 9, 1, 0);
+
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        assertThat(orderStatus(order.orderId())).isEqualTo("PAID");
+        assertThat(inventoryOf(order.inventoryId())).containsExactly(10, 9, 0, 1);
+    }
+
+    @Test
     void 만료가_이긴_뒤_결제_성공이_확인되면_REFUNDING으로_전환하고_운영자에게_넘긴다() {
         OrderFixture order = order(10, 1);
         // 11.6: 만료 판정과 결제 확정이 겹치는 좁은 창. 만료가 먼저 커밋된 상태를 재현한다.

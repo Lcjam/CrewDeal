@@ -1,6 +1,7 @@
 package com.groupdrop.reconciliation;
 
 import com.groupdrop.common.AuditLogRepository;
+import com.groupdrop.common.GroupdropProperties;
 import com.groupdrop.ledger.LedgerRepository;
 import com.groupdrop.ledger.LedgerService;
 import com.groupdrop.payment.PaymentRecoveryService;
@@ -27,7 +28,7 @@ import org.springframework.stereotype.Service;
  * REC-01 결제 대사.
  *
  * <p>세 단계다. ① <b>해소</b> — 최소 경과 시간이 지난 비최종 결제·미완 환불을 PG 조회로 확정한다
- * (S4-b가 이 단계를 검증한다). ② <b>매칭·분류</b> — PG 거래 목록과 내부 결제를 맞춰 7개 유형으로
+ * (S4-b가 이 단계를 검증한다). ② <b>매칭·분류</b> — PG 거래 목록과 내부 결제를 맞춰 8개 유형으로
  * 나눈다. ③ <b>원장 재검산</b> — 차변 = 대변 전수 검증 결과를 지표로 낸다 (S5, 16.4).
  *
  * <p>해소를 분류보다 먼저 하는 이유는 순서가 결과를 바꾸기 때문이다. 먼저 분류하면 방금 확정될 수 있었던
@@ -42,6 +43,7 @@ public class ReconciliationService {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationService.class);
     private static final String SOURCE = "reconciliation";
     private static final int STALE_REFUND_LIMIT = 200;
+    private static final Duration OCCURRED_AT_TOLERANCE = Duration.ofSeconds(1);
 
     private final ReconciliationRepository reconciliations;
     private final PaymentRepository payments;
@@ -51,12 +53,14 @@ public class ReconciliationService {
     private final AuditLogRepository auditLogs;
     private final ReconciliationMetrics metrics;
     private final PgClient pgClient;
+    private final GroupdropProperties properties;
     private final Clock clock;
 
     public ReconciliationService(ReconciliationRepository reconciliations, PaymentRepository payments,
                                  PaymentRecoveryService paymentRecovery, RefundReconciliationSupport refunds,
                                  LedgerService ledger, AuditLogRepository auditLogs,
-                                 ReconciliationMetrics metrics, PgClient pgClient, Clock clock) {
+                                 ReconciliationMetrics metrics, PgClient pgClient,
+                                 GroupdropProperties properties, Clock clock) {
         this.reconciliations = reconciliations;
         this.payments = payments;
         this.paymentRecovery = paymentRecovery;
@@ -65,6 +69,7 @@ public class ReconciliationService {
         this.auditLogs = auditLogs;
         this.metrics = metrics;
         this.pgClient = pgClient;
+        this.properties = properties;
         this.clock = clock;
     }
 
@@ -75,23 +80,41 @@ public class ReconciliationService {
     public ReconciliationRepository.Run run(int minAgeMinutes) {
         Instant startedAt = Instant.now(clock);
         Instant cutoff = startedAt.minus(Duration.ofMinutes(minAgeMinutes));
+        int staleRuns = reconciliations.failStaleRuns(
+                startedAt.minus(properties.reconciliationInterval().multipliedBy(2)), startedAt);
+        if (staleRuns > 0) {
+            auditLogs.record(SOURCE, "STALE_RECONCILIATION_RECOVERED", "RECONCILIATION_RUN", null,
+                    "중단된 RUNNING 대사 %d건을 FAILED로 회수했습니다.".formatted(staleRuns), startedAt);
+        }
         Long runId = reconciliations.startRun(minAgeMinutes, startedAt);
         metrics.recordRun();
         try {
             int resolved = resolveNonFinalPayments(runId, cutoff);
 
+            requireActive(runId);
             List<PgClient.ProviderTransaction> providerTransactions = pgClient.listTransactions(cutoff);
+            requireActive(runId);
             resolved += resolveStaleRefunds(providerTransactions, cutoff);
 
+            requireActive(runId);
             List<ReconciliationRepository.InternalPayment> internals =
                     reconciliations.findReconcilablePayments(cutoff);
             int mismatches = classify(runId, providerTransactions, internals);
 
+            requireActive(runId);
             List<LedgerRepository.Unbalanced> unbalanced = ledger.findUnbalancedTransactions();
             Instant finishedAt = Instant.now(clock);
-            reconciliations.resolveDisappeared(runId, finishedAt);
-            reconciliations.completeRun(runId, providerTransactions.size(), internals.size(), mismatches,
-                    resolved, unbalanced.size(), finishedAt);
+            List<Long> autoResolved = reconciliations.resolveDisappeared(runId, cutoff, finishedAt);
+            for (Long discrepancyId : autoResolved) {
+                metrics.recordResolved();
+                auditLogs.record(SOURCE, "DISCREPANCY_AUTO_RESOLVED", "RECONCILIATION_DISCREPANCY",
+                        discrepancyId, "대사 범위 안에서 조건이 재검출되지 않아 자동 해소했습니다.", finishedAt);
+            }
+            resolved += autoResolved.size();
+            if (!reconciliations.completeRun(runId, providerTransactions.size(), internals.size(), mismatches,
+                    resolved, unbalanced.size(), finishedAt)) {
+                throw new ReconciliationRepository.ReconciliationLeaseLostException(runId);
+            }
             metrics.updateGauges(unbalanced.size(), reconciliations.countOpen());
             if (!unbalanced.isEmpty()) {
                 log.error("원장 재검산에서 불균형 거래 {}건을 발견했습니다: {}", unbalanced.size(), unbalanced);
@@ -107,6 +130,12 @@ public class ReconciliationService {
             metrics.recordRunFailed();
             log.error("대사 {} 실행에 실패했습니다.", runId, exception);
             throw exception;
+        }
+    }
+
+    private void requireActive(Long runId) {
+        if (!reconciliations.isRunning(runId)) {
+            throw new ReconciliationRepository.ReconciliationLeaseLostException(runId);
         }
     }
 
@@ -144,7 +173,8 @@ public class ReconciliationService {
     private void registerUnresolved(Long runId, ReconciliationRepository.InternalPayment payment,
                                     String detail, Instant now) {
         reconciliations.upsertOpen(runId, DiscrepancyType.UNRESOLVED_INTERNAL, payment.id(), payment.orderId(),
-                payment.providerPaymentId(), payment.status(), null, payment.amount(), null, detail, now);
+                payment.providerPaymentId(), payment.status(), null, payment.amount(), null, detail,
+                payment.createdAt(), now);
         metrics.recordMismatch(DiscrepancyType.UNRESOLVED_INTERNAL);
     }
 
@@ -202,7 +232,8 @@ public class ReconciliationService {
                 if (internal.claimsProviderSuccess()) {
                     reconciliations.upsertOpen(runId, DiscrepancyType.MISSING_PROVIDER, internal.id(),
                             internal.orderId(), internal.providerPaymentId(), internal.status(), null,
-                            internal.amount(), null, "PG에 매칭되는 거래가 없습니다.", now);
+                            internal.amount(), null, "PG에 매칭되는 거래가 없습니다.",
+                            internal.createdAt(), now);
                     metrics.recordMismatch(DiscrepancyType.MISSING_PROVIDER);
                     mismatches++;
                 }
@@ -233,7 +264,8 @@ public class ReconciliationService {
 
     /**
      * 비교 필드는 REC-01이 정한 넷이다 — 결제 금액, 환불 금액, 결제 상태, 거래 발생 시각.
-     * 거래 발생 시각은 유형 코드가 없으므로 불일치 상세에만 남긴다.
+     * 성공 결제의 승인 시각과 완료 환불의 완료 시각은 각각 비교하며, 차이가 1초를 초과하거나 한쪽만
+     * 없으면 {@link DiscrepancyType#OCCURRED_AT_MISMATCH}로 기록한다 (D-031).
      *
      * <p>{@code SUPERSEDED} + PG의 성공·환불 쌍은 이중 결제 보상이 끝난 정상 매칭이다 (PAY-01).
      */
@@ -244,7 +276,7 @@ public class ReconciliationService {
             reconciliations.upsertOpen(runId, DiscrepancyType.AMOUNT_MISMATCH, internal.id(),
                     internal.orderId(), transaction.providerPaymentId(), internal.status(),
                     transaction.status(), internal.amount(), transaction.amount(),
-                    "결제 금액이 다릅니다.", now);
+                    "결제 금액이 다릅니다.", occurrence(internal, transaction), now);
             metrics.recordMismatch(DiscrepancyType.AMOUNT_MISMATCH);
             mismatches++;
         }
@@ -252,7 +284,7 @@ public class ReconciliationService {
             reconciliations.upsertOpen(runId, DiscrepancyType.STATUS_MISMATCH, internal.id(),
                     internal.orderId(), transaction.providerPaymentId(), internal.status(),
                     transaction.status(), internal.amount(), transaction.amount(),
-                    "결제 상태가 다릅니다 (양쪽 모두 최종 상태).", now);
+                    "결제 상태가 다릅니다 (양쪽 모두 최종 상태).", occurrence(internal, transaction), now);
             metrics.recordMismatch(DiscrepancyType.STATUS_MISMATCH);
             mismatches++;
         }
@@ -261,11 +293,56 @@ public class ReconciliationService {
             reconciliations.upsertOpen(runId, DiscrepancyType.REFUND_MISMATCH, internal.id(),
                     internal.orderId(), transaction.providerPaymentId(), internal.status(),
                     transaction.status(), internal.refundedAmount(), transaction.refundedAmount(),
-                    "환불 금액이 다릅니다.", now);
+                    "환불 금액이 다릅니다.", occurrence(internal, transaction), now);
             metrics.recordMismatch(DiscrepancyType.REFUND_MISMATCH);
             mismatches++;
         }
+        List<String> occurredAtDifferences = new ArrayList<>();
+        if (internalSucceeded(internal) && transaction.succeeded()
+                && occurredAtMismatch(internal.approvedAt(), transaction.processedAt())) {
+            occurredAtDifferences.add(occurredAtDetail(
+                    "결제", internal.approvedAt(), transaction.processedAt()));
+        }
+        if (internal.refundedAmount() > 0 && transaction.refundedAmount() > 0
+                && occurredAtMismatch(internal.refundCompletedAt(), transaction.refundedAt())) {
+            occurredAtDifferences.add(occurredAtDetail(
+                    "환불", internal.refundCompletedAt(), transaction.refundedAt()));
+        }
+        if (!occurredAtDifferences.isEmpty()) {
+            reconciliations.upsertOpen(runId, DiscrepancyType.OCCURRED_AT_MISMATCH, internal.id(),
+                    internal.orderId(), transaction.providerPaymentId(), internal.status(), transaction.status(),
+                    internal.amount(), transaction.amount(), String.join(" ", occurredAtDifferences),
+                    latest(internal.approvedAt(), internal.refundCompletedAt(), transaction.processedAt(),
+                            transaction.refundedAt(), internal.createdAt()), now);
+            metrics.recordMismatch(DiscrepancyType.OCCURRED_AT_MISMATCH);
+            mismatches++;
+        }
         return mismatches;
+    }
+
+    private boolean occurredAtMismatch(Instant internal, Instant provider) {
+        if (internal == null || provider == null) {
+            return true;
+        }
+        return Duration.between(internal, provider).abs().compareTo(OCCURRED_AT_TOLERANCE) > 0;
+    }
+
+    private String occurredAtDetail(String event, Instant internal, Instant provider) {
+        String differenceMillis = internal == null || provider == null
+                ? "UNKNOWN"
+                : String.valueOf(Duration.between(internal, provider).abs().toMillis());
+        return "%s 발생 시각 불일치(internal=%s, provider=%s, differenceMillis=%s, toleranceMillis=%d)."
+                .formatted(event, internal, provider, differenceMillis, OCCURRED_AT_TOLERANCE.toMillis());
+    }
+
+    private Instant latest(Instant... values) {
+        Instant latest = null;
+        for (Instant value : values) {
+            if (value != null && (latest == null || value.isAfter(latest))) {
+                latest = value;
+            }
+        }
+        return latest;
     }
 
     private int reportMissingInternal(Long runId, List<PgClient.ProviderTransaction> providerTransactions,
@@ -279,7 +356,7 @@ public class ReconciliationService {
                     parseOrderId(transaction.orderId()), transaction.providerPaymentId(), null,
                     transaction.status(), null, transaction.amount(),
                     "PG에만 존재하는 거래입니다 (merchantPaymentId=%s).".formatted(transaction.merchantPaymentId()),
-                    now);
+                    transaction.processedAt(), now);
             metrics.recordMismatch(DiscrepancyType.MISSING_INTERNAL);
             mismatches++;
         }
@@ -321,7 +398,7 @@ public class ReconciliationService {
                 String note = compensate(loser, orderId, now);
                 reconciliations.upsertOpen(runId, DiscrepancyType.DUPLICATE_PAYMENT, null, orderId,
                         loser.providerPaymentId(), winner == null ? null : winner.status(), loser.status(),
-                        null, loser.amount(), note, now);
+                        null, loser.amount(), note, loser.processedAt(), now);
                 metrics.recordMismatch(DiscrepancyType.DUPLICATE_PAYMENT);
                 mismatches++;
             }
@@ -352,6 +429,11 @@ public class ReconciliationService {
             case "SUCCEEDED", "REFUNDING", "REFUNDED", "SUPERSEDED" -> true;
             default -> false;
         };
+    }
+
+    private Instant occurrence(ReconciliationRepository.InternalPayment internal,
+                               PgClient.ProviderTransaction transaction) {
+        return transaction.processedAt() == null ? internal.createdAt() : transaction.processedAt();
     }
 
     private boolean isFinal(String status) {

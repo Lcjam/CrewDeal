@@ -4,14 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.groupdrop.payment.AbstractPaymentIntegrationTest;
+import com.groupdrop.payment.PaymentFinalizer;
+import com.groupdrop.payment.PaymentRepository;
 import com.groupdrop.payment.StubPgClient;
 import com.groupdrop.refund.CreateRefundRequest;
 import com.groupdrop.refund.RefundService;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * SET-01·SET-02 정산 대상 확정과 지급, 그리고 S6.
@@ -37,6 +45,12 @@ class SettlementFlowIntegrationTest extends AbstractPaymentIntegrationTest {
     private SettlementRepository settlements;
     @Autowired
     private RefundService refundService;
+    @Autowired
+    private PaymentFinalizer paymentFinalizer;
+    @Autowired
+    private PaymentRepository paymentRepository;
+    @Autowired
+    private TransactionTemplate transactions;
 
     @Test
     void 캠페인_종료부터_정산_완료까지_스케줄러_경로로_흐른다() {
@@ -141,6 +155,86 @@ class SettlementFlowIntegrationTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void FAILED_확정_이벤트도_재처리되어_PROCESSED가_될_때까지_SETTLING을_막는다() {
+        OrderFixture order = order(10, 1);
+        Long paymentId = pay(order).body().id();
+        jdbc.update("""
+                UPDATE outbox_events SET status='FAILED', last_error='test', processed_at=now()
+                 WHERE event_type='payment.finalized' AND aggregate_id=?
+                """, paymentId);
+        closeCampaign(order.campaignId(), 8);
+
+        SettlementService.RunResult blocked = settlementService.run(ADMIN, order.campaignId());
+
+        assertThat(blocked.outcome()).isEqualTo("DEFERRED");
+        assertThat(blocked.reason()).contains("미처리 확정 이벤트 1건");
+        assertThat(orderStatus(order.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThat(campaignStatus(order.campaignId())).isEqualTo("CLOSED");
+
+        jdbc.update("""
+                UPDATE outbox_events SET status='PENDING', attempts=0, available_at=now(), processed_at=NULL
+                 WHERE event_type='payment.finalized' AND aggregate_id=?
+                """, paymentId);
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        assertThat(settlementService.run(ADMIN, order.campaignId()).outcome()).isEqualTo("CREATED");
+    }
+
+    @Test
+    void 결제_확정과_정산_확정이_경쟁해도_결제_주문을_동결_스냅숏에서_누락하지_않는다() throws Exception {
+        OrderFixture order = order(10, 1);
+        Long paymentId = jdbc.queryForObject("""
+                INSERT INTO payments(order_id,status,amount,created_at,updated_at)
+                VALUES(?,'PROCESSING',?,now(),now()) RETURNING id
+                """, Long.class, order.orderId(), order.totalAmount());
+        closeCampaign(order.campaignId(), 8);
+
+        CountDownLatch finalizedBeforeCommit = new CountDownLatch(1);
+        CountDownLatch allowCommit = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> finalize = executor.submit(() -> transactions.executeWithoutResult(status -> {
+                // 실제 finalizer와 동일한 캠페인 장벽을 먼저 소유한 뒤, 확정과 이벤트를 아직 커밋하지 않는다.
+                jdbc.queryForObject("SELECT id FROM campaigns WHERE id=? FOR UPDATE", Long.class,
+                        order.campaignId());
+                paymentFinalizer.succeed(paymentRepository.findPayment(paymentId).orElseThrow(),
+                        "pg_settlement_race_" + paymentId, java.time.Instant.now(), "test");
+                finalizedBeforeCommit.countDown();
+                try {
+                    if (!allowCommit.await(20, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("결제 확정 경쟁 테스트 대기 시간 초과");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+            }));
+            assertThat(finalizedBeforeCommit.await(20, TimeUnit.SECONDS)).isTrue();
+
+            Future<SettlementService.RunResult> determination =
+                    executor.submit(() -> settlementService.run(ADMIN, order.campaignId()));
+            try {
+                // 정산은 같은 캠페인 장벽에서 기다려야 하며, 미커밋 SUCCEEDED를 건너뛰어서는 안 된다.
+                Thread.sleep(200);
+                assertThat(determination.isDone()).isFalse();
+            } finally {
+                allowCommit.countDown();
+            }
+
+            finalize.get(20, TimeUnit.SECONDS);
+            SettlementService.RunResult first = determination.get(20, TimeUnit.SECONDS);
+            assertThat(first.outcome()).isEqualTo("DEFERRED");
+            assertThat(first.reason()).contains("미처리 확정 이벤트 1건");
+        }
+
+        assertThat(campaignStatus(order.campaignId())).isEqualTo("CLOSED");
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        assertThat(orderStatus(order.orderId())).isEqualTo("PAID");
+
+        SettlementService.RunResult second = settlementService.run(ADMIN, order.campaignId());
+        assertThat(second.outcome()).isEqualTo("CREATED");
+        assertThat(settlements.findBatchesOfCampaign(order.campaignId())).hasSize(2);
+    }
+
+    @Test
     void 전액_환불된_캠페인은_배치_없이_SETTLED로_종결한다() {
         OrderFixture order = order(10, 1);
         Long paymentId = pay(order).body().id();
@@ -162,7 +256,7 @@ class SettlementFlowIntegrationTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
-    void 미해결_대사_불일치가_있으면_지급_전_대조에서_HELD로_전환한다() {
+    void 거래_발생_시각_OPEN_불일치가_있으면_지급_전_대조에서_HELD로_전환한다() {
         OrderFixture order = order(10, 1);
         Long paymentId = pay(order).body().id();
         outboxWorker.drain();
@@ -341,7 +435,8 @@ class SettlementFlowIntegrationTest extends AbstractPaymentIntegrationTest {
                 INSERT INTO reconciliation_discrepancies
                     (run_id, last_seen_run_id, discrepancy_type, payment_id, order_id, status,
                      detail, detected_at, updated_at)
-                VALUES(?, ?, 'AMOUNT_MISMATCH', ?, ?, 'OPEN', '테스트 주입 불일치', now(), now())
+                VALUES(?, ?, 'OCCURRED_AT_MISMATCH', ?, ?, 'OPEN',
+                       '결제 발생 시각 차이 1001ms 테스트 주입', now(), now())
                 """, runId, runId, paymentId, orderId);
     }
 

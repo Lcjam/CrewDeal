@@ -78,6 +78,16 @@ public class InboxRepository {
                 """, OutboxRepository.truncate(error), ts(now), id);
     }
 
+    /** REC-02 운영자 재처리: FAILED 이벤트만 소비 대기열로 되돌린다. */
+    public boolean retryFailed(Long id, Instant now) {
+        return jdbc.update("""
+                UPDATE inbox_events
+                   SET status = 'PENDING', attempts = 0, available_at = ?,
+                       last_error = NULL, processed_at = NULL
+                 WHERE id = ? AND status = 'FAILED'
+                """, ts(now), id) == 1;
+    }
+
     public long countByStatus(String status) {
         Long count = jdbc.queryForObject(
                 "SELECT count(*) FROM inbox_events WHERE status = ?", Long.class, status);

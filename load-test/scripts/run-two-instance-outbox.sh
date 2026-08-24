@@ -16,9 +16,15 @@ DB_PASSWORD="${DB_PASSWORD:-groupdrop}"
 DB_CONTAINER="${DB_CONTAINER:-}"
 ORDER_COUNT="${ORDER_COUNT:-20}"
 INVENTORY="${INVENTORY:-100}"
+# 17.4 실증 스크립트가 설정하면 UNKNOWN을 만든 뒤 app 하나를 실제 SIGKILL 한다.
+# 기본값은 3주차 Outbox/Inbox 회귀의 기존 동작을 보존한다.
+KILL_APP1_BEFORE_REPLAY="${KILL_APP1_BEFORE_REPLAY:-false}"
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-}"
+APP1_CONTAINER="${APP1_CONTAINER:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOAD_TEST_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_DIR="$(cd "${LOAD_TEST_DIR}/.." && pwd)"
 RUN_TMP="$(mktemp -d)"
 trap 'rm -rf "${RUN_TMP}"' EXIT
 
@@ -38,6 +44,23 @@ run_psql() {
 login() {
   curl --fail --silent --show-error -c "$3" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$1\",\"password\":\"groupdrop123!\"}" "$2/api/auth/login" > /dev/null
+}
+
+wait_for_app() {
+  local url="$1"
+  for _ in $(seq 1 60); do
+    if curl --fail --silent --show-error "${url}/actuator/health" > /dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "앱이 재기동 후 준비되지 않았습니다: ${url}" >&2
+  exit 1
+}
+
+consumed_of() {
+  curl --fail --silent --show-error "$1/actuator/prometheus" \
+    | awk -v metric="$2" '$0 ~ "^" metric "\\{" { sum += $NF } END { printf "%d", sum + 0 }'
 }
 
 echo '== 1. 캠페인 준비 =='
@@ -123,6 +146,22 @@ echo "UNKNOWN 결제: ${unknown_count}건 (기대: ${ORDER_COUNT})"
 [[ "${unknown_count}" == "${ORDER_COUNT}" ]] || { echo 'UNKNOWN 결제 수가 기대와 다릅니다' >&2; exit 1; }
 
 echo '== 4. 보류 웹훅 일괄 재발사 (수신은 app 인스턴스 1개) =='
+# app1은 kill 후 새 JVM으로 기동되어 Micrometer 카운터가 0부터 다시 시작한다. kill 직전의
+# 소비량을 보존해 아래 DB PROCESSED 행과 비교할 때 실제 전체 소비량을 사용한다.
+app1_outbox_before_kill=0
+app1_inbox_before_kill=0
+if [[ "${KILL_APP1_BEFORE_REPLAY}" == 'true' ]]; then
+  [[ -n "${COMPOSE_PROJECT}" ]] || { echo 'COMPOSE_PROJECT is required when KILL_APP1_BEFORE_REPLAY=true' >&2; exit 2; }
+  APP1_CONTAINER="${APP1_CONTAINER:-${COMPOSE_PROJECT}-app-1}"
+  app1_outbox_before_kill="$(consumed_of "${APP1_URL}" outbox_event_processed_total)"
+  app1_inbox_before_kill="$(consumed_of "${APP1_URL}" inbox_event_processed_total)"
+  echo "  kill 전 app 소비: outbox=${app1_outbox_before_kill}, inbox=${app1_inbox_before_kill}"
+  echo "  docker kill ${APP1_CONTAINER} → compose app 재기동"
+  docker kill "${APP1_CONTAINER}" > /dev/null
+  docker compose -p "${COMPOSE_PROJECT}" -f "${PROJECT_DIR}/docker-compose.yml" \
+    -f "${PROJECT_DIR}/docker-compose.two-instances.yml" up -d app > /dev/null
+  wait_for_app "${APP1_URL}"
+fi
 replayed="$(curl --fail --silent --show-error -X POST -H 'Content-Type: application/json' -d '{}' \
   "${MOCK_PG_URL}/mock-pg/test/webhooks/replay" | jq -r '.replayedCount')"
 echo "재발사한 웹훅: ${replayed}건"
@@ -138,19 +177,17 @@ done
 [[ "${pending}" == '0' ]] || { echo "미처리 이벤트가 남았습니다: ${pending}" >&2; exit 1; }
 
 echo '== 6. 인스턴스별 소비량과 이벤트 수 대조 =='
-consumed_of() {
-  curl --fail --silent --show-error "$1/actuator/prometheus" \
-    | awk -v metric="$2" '$0 ~ "^" metric "\\{" { sum += $NF } END { printf "%d", sum + 0 }'
-}
-app1_outbox="$(consumed_of "${APP1_URL}" outbox_event_processed_total)"
+app1_outbox_after_kill="$(consumed_of "${APP1_URL}" outbox_event_processed_total)"
 app2_outbox="$(consumed_of "${APP2_URL}" outbox_event_processed_total)"
-app1_inbox="$(consumed_of "${APP1_URL}" inbox_event_processed_total)"
+app1_inbox_after_kill="$(consumed_of "${APP1_URL}" inbox_event_processed_total)"
 app2_inbox="$(consumed_of "${APP2_URL}" inbox_event_processed_total)"
+app1_outbox=$((app1_outbox_before_kill + app1_outbox_after_kill))
+app1_inbox=$((app1_inbox_before_kill + app1_inbox_after_kill))
 outbox_rows="$(run_psql -tAc "SELECT count(*) FROM outbox_events WHERE status='PROCESSED'")"
 inbox_rows="$(run_psql -tAc "SELECT count(*) FROM inbox_events WHERE status='PROCESSED'")"
 
-echo "outbox 소비: app=${app1_outbox} app2=${app2_outbox} 합=$((app1_outbox + app2_outbox)) / PROCESSED 행=${outbox_rows}"
-echo "inbox  소비: app=${app1_inbox} app2=${app2_inbox} 합=$((app1_inbox + app2_inbox)) / PROCESSED 행=${inbox_rows}"
+echo "outbox 소비: app=${app1_outbox} (kill 전 ${app1_outbox_before_kill} + 후 ${app1_outbox_after_kill}) app2=${app2_outbox} 합=$((app1_outbox + app2_outbox)) / PROCESSED 행=${outbox_rows}"
+echo "inbox  소비: app=${app1_inbox} (kill 전 ${app1_inbox_before_kill} + 후 ${app1_inbox_after_kill}) app2=${app2_inbox} 합=$((app1_inbox + app2_inbox)) / PROCESSED 행=${inbox_rows}"
 
 # 중복 소비가 있었다면 두 인스턴스의 처리 횟수 합이 이벤트 행 수를 넘는다.
 if (( app1_outbox + app2_outbox != outbox_rows )); then

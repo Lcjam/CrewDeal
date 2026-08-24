@@ -102,10 +102,16 @@ public class SettlementRecoveryService {
         }
 
         SettlementRepository.SettledItem sample = items.getFirst();
-        // 회수 배치는 즉시 실행된다 (SET-03). PROCESSING으로 만들고 같은 트랜잭션에서 COMPLETED로 닫는
-        // 이유는 10.5의 전이표를 우회하지 않기 위해서다 — 외부 호출이 없으므로 중간 관측 구간이 없다.
+        // 회수 배치는 즉시 실행된다 (SET-03). 외부 호출은 없지만 10.5의 상태 전이표는 회수 배치에도
+        // 적용되므로, 생성 상태 PENDING에서 조건부 UPDATE로 READY와 PROCESSING을 거쳐 완료한다.
         Long recoveryBatchId = settlements.insertBatch(sample.campaignId(), payeeType, sample.payeeId(),
-                BatchType.RECOVERY, SettlementBatchStatus.PROCESSING, -total, now, now);
+                BatchType.RECOVERY, SettlementBatchStatus.PENDING, -total, now, now);
+        if (!settlements.markReady(recoveryBatchId, now)) {
+            throw new IllegalStateException("회수 배치 READY 전이에 실패했습니다: " + recoveryBatchId);
+        }
+        if (!settlements.claimForProcessing(recoveryBatchId, now)) {
+            throw new IllegalStateException("회수 배치 PROCESSING 전이에 실패했습니다: " + recoveryBatchId);
+        }
         settlements.attachRecoveryBatch(adjustmentIds, recoveryBatchId, now);
         ledger.recordRecovery(recoveryBatchId, sample.campaignId(), payeeType.payableAccount(), total, now, now);
         if (!settlements.markCompleted(recoveryBatchId, now)) {

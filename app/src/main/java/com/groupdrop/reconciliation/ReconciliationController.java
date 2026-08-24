@@ -62,6 +62,18 @@ public class ReconciliationController {
         return ResponseEntity.ok(ops.syncPayment(authentication.getName(), paymentId));
     }
 
+    @PostMapping("/api/admin/outbox-events/{eventId}/retry")
+    public ResponseEntity<ReconciliationOpsService.EventRetryResponse> retryOutboxEvent(
+            Authentication authentication, @PathVariable Long eventId) {
+        return ResponseEntity.ok(ops.retryOutboxEvent(authentication.getName(), eventId));
+    }
+
+    @PostMapping("/api/admin/inbox-events/{eventId}/retry")
+    public ResponseEntity<ReconciliationOpsService.EventRetryResponse> retryInboxEvent(
+            Authentication authentication, @PathVariable Long eventId) {
+        return ResponseEntity.ok(ops.retryInboxEvent(authentication.getName(), eventId));
+    }
+
     @GetMapping("/api/admin/ops/summary")
     public ResponseEntity<ReconciliationOpsService.OpsSummary> summary(Authentication authentication) {
         return ResponseEntity.ok(ops.summary(authentication.getName()));

@@ -43,7 +43,7 @@ public class SettlementRepository {
         return jdbc.queryForObject("""
                 SELECT count(*)
                   FROM outbox_events oe
-                 WHERE oe.status = 'PENDING'
+                 WHERE oe.status <> 'PROCESSED'
                    AND ((oe.event_type = 'payment.finalized' AND EXISTS (
                             SELECT 1 FROM payments p JOIN orders o ON o.id = p.order_id
                              WHERE p.id = oe.aggregate_id AND o.campaign_id = ?))

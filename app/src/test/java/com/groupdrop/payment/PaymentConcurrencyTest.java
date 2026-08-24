@@ -118,6 +118,8 @@ class PaymentConcurrencyTest extends AbstractPaymentIntegrationTest {
 
         assertThat(result).isEqualTo(PaymentFinalizer.Result.SUPERSEDED);
         assertThat(paymentStatus(loser)).isEqualTo("SUPERSEDED");
+        assertThat(jdbc.queryForObject("SELECT approved_at IS NOT NULL FROM payments WHERE id=?",
+                Boolean.class, loser)).isTrue();
         assertThat(jdbc.queryForObject("SELECT failure_code FROM payments WHERE id=?", String.class, loser))
                 .isEqualTo("DUPLICATE_PAYMENT");
         // 패자는 수익 분해에 진입한 적이 없으므로 확정 이벤트를 발행하지 않는다.

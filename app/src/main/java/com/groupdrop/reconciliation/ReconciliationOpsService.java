@@ -3,6 +3,7 @@ package com.groupdrop.reconciliation;
 import com.groupdrop.common.ApiException;
 import com.groupdrop.common.AuditLogRepository;
 import com.groupdrop.outbox.OutboxRepository;
+import com.groupdrop.outbox.InboxRepository;
 import com.groupdrop.payment.PaymentRecoveryService;
 import com.groupdrop.payment.PaymentResponse;
 import com.groupdrop.settlement.SettlementRepository;
@@ -13,6 +14,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,6 +33,7 @@ public class ReconciliationOpsService {
     private final PaymentRecoveryService paymentRecovery;
     private final SettlementRepository settlements;
     private final OutboxRepository outbox;
+    private final InboxRepository inbox;
     private final AuditLogRepository auditLogs;
     private final UserRepository users;
     private final Clock clock;
@@ -38,13 +41,15 @@ public class ReconciliationOpsService {
     public ReconciliationOpsService(ReconciliationRepository reconciliations,
                                     ReconciliationService reconciliationService,
                                     PaymentRecoveryService paymentRecovery, SettlementRepository settlements,
-                                    OutboxRepository outbox, AuditLogRepository auditLogs,
+                                    OutboxRepository outbox, InboxRepository inbox,
+                                    AuditLogRepository auditLogs,
                                     UserRepository users, Clock clock) {
         this.reconciliations = reconciliations;
         this.reconciliationService = reconciliationService;
         this.paymentRecovery = paymentRecovery;
         this.settlements = settlements;
         this.outbox = outbox;
+        this.inbox = inbox;
         this.auditLogs = auditLogs;
         this.users = users;
         this.clock = clock;
@@ -59,7 +64,12 @@ public class ReconciliationOpsService {
         Instant now = Instant.now(clock);
         auditLogs.record(requesterEmail, "RECONCILIATION_TRIGGERED", "RECONCILIATION_RUN", null,
                 "운영자가 대사를 실행했습니다 (minAgeMinutes=%d).".formatted(minAge), now);
-        return reconciliationService.run(minAge);
+        try {
+            return reconciliationService.run(minAge);
+        } catch (ReconciliationRepository.ReconciliationAlreadyRunningException exception) {
+            throw new ApiException(HttpStatus.CONFLICT, "RECONCILIATION_ALREADY_RUNNING",
+                    "이미 실행 중인 대사가 있습니다.");
+        }
     }
 
     public ReconciliationRepository.Run findRun(String requesterEmail, Long runId) {
@@ -120,6 +130,37 @@ public class ReconciliationOpsService {
         return after;
     }
 
+    /** REC-02 실패 Outbox 이벤트 재처리. FAILED 이외 상태를 덮어쓰지 않는다. */
+    public EventRetryResponse retryOutboxEvent(String requesterEmail, Long eventId) {
+        requireAdmin(requesterEmail);
+        Instant now = Instant.now(clock);
+        try {
+            if (!outbox.retryFailed(eventId, now)) {
+                throw new ApiException(HttpStatus.CONFLICT, "OUTBOX_EVENT_NOT_FAILED",
+                        "FAILED 상태의 Outbox 이벤트만 재처리할 수 있습니다.");
+            }
+        } catch (DuplicateKeyException exception) {
+            throw new ApiException(HttpStatus.CONFLICT, "OUTBOX_EVENT_ALREADY_PENDING",
+                    "같은 유형과 집계의 PENDING Outbox 이벤트가 이미 있습니다.");
+        }
+        auditLogs.record(requesterEmail, "OUTBOX_EVENT_RETRIED", "OUTBOX_EVENT", eventId,
+                "실패 이벤트를 PENDING으로 되돌렸습니다.", now);
+        return new EventRetryResponse("OUTBOX", eventId, "PENDING");
+    }
+
+    /** REC-02 실패 Inbox 이벤트 재처리. 원 provider_event_id는 유지한다. */
+    public EventRetryResponse retryInboxEvent(String requesterEmail, Long eventId) {
+        requireAdmin(requesterEmail);
+        Instant now = Instant.now(clock);
+        if (!inbox.retryFailed(eventId, now)) {
+            throw new ApiException(HttpStatus.CONFLICT, "INBOX_EVENT_NOT_FAILED",
+                    "FAILED 상태의 Inbox 이벤트만 재처리할 수 있습니다.");
+        }
+        auditLogs.record(requesterEmail, "INBOX_EVENT_RETRIED", "INBOX_EVENT", eventId,
+                "실패 이벤트를 PENDING으로 되돌렸습니다.", now);
+        return new EventRetryResponse("INBOX", eventId, "PENDING");
+    }
+
     /**
      * 16.4의 핵심 운영 수치 4종. Grafana가 잘려도 증거가 남도록 API로도 제공한다.
      */
@@ -168,4 +209,6 @@ public class ReconciliationOpsService {
     public record RunReconciliationRequest(Integer minAgeMinutes) { }
 
     public record ResolveDiscrepancyRequest(String note) { }
+
+    public record EventRetryResponse(String channel, Long eventId, String status) { }
 }

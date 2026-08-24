@@ -46,22 +46,26 @@ public class RefundInitiator {
         this.clock = clock;
     }
 
-    /**
-     * 성공 결제의 전액 환불 접수 (REF-02, 11.6 자동 환불 공용).
-     *
-     * <p>주문 전이는 10.2의 두 경로({@code PAID → REFUNDING}, {@code EXPIRED → REFUNDING})를 차례로
-     * 시도한다. 11.6 자동 환불 경로에서는 주문이 이미 {@code REFUNDING}으로 넘어와 있어 둘 다 0건이며,
-     * 그것이 정상이다 — 상태를 미리 조회해 분기하지 않고 조건부 UPDATE의 결과로 판정한다.
-     */
-    public Long initiate(Long paymentId, Long orderId, long amount, String reason, String source) {
+    /** 운영자 REF-02 경로. 주문이 실제 {@code PAID}일 때만 접수한다. */
+    public Long initiatePaidOrder(Long paymentId, Long orderId, long amount, String reason, String source) {
         Instant now = Instant.now(clock);
-        if (!payments.markRefunding(paymentId, now)) {
-            // 선조회를 통과했더라도 다른 요청이 먼저 접수했을 수 있다. 조건부 UPDATE의 0건이 그 판정이며,
-            // 호출자(요청 스레드는 409, 워커는 재시도)가 각자의 방식으로 처리한다.
+        if (!orders.markRefundingFromPaid(orderId, now)) {
             throw new RefundNotAcceptableException(paymentId);
         }
-        if (!orders.markRefundingFromPaid(orderId, now)) {
-            orders.markRefundingFromExpired(orderId, now);
+        if (!payments.markRefunding(paymentId, now)) {
+            throw new RefundNotAcceptableException(paymentId);
+        }
+        return append(paymentId, orderId, amount, false, reason, source, now);
+    }
+
+    /** 11.6 만료 경쟁 전용 경로. 일반 운영자 환불과 허용 출발 상태를 섞지 않는다. */
+    public Long initiateExpiredOrder(Long paymentId, Long orderId, long amount, String reason, String source) {
+        Instant now = Instant.now(clock);
+        if (!orders.markRefundingFromExpired(orderId, now)) {
+            throw new RefundNotAcceptableException(paymentId);
+        }
+        if (!payments.markRefunding(paymentId, now)) {
+            throw new RefundNotAcceptableException(paymentId);
         }
         return append(paymentId, orderId, amount, false, reason, source, now);
     }

@@ -30,6 +30,8 @@ public class ReconciliationScheduler {
     public void run() {
         try {
             reconciliations.run((int) properties.reconciliationMinAge().toMinutes());
+        } catch (ReconciliationRepository.ReconciliationAlreadyRunningException exception) {
+            log.info("다른 인스턴스가 대사를 실행 중이어서 이번 주기를 건너뜁니다.");
         } catch (RuntimeException exception) {
             log.error("정기 대사에 실패했습니다.", exception);
         }

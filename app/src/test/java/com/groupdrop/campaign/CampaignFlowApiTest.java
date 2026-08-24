@@ -27,6 +27,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -64,6 +65,8 @@ class CampaignFlowApiTest {
     private CampaignPolicyVersionRepository campaignPolicyVersionRepository;
     @Autowired
     private CampaignPolicyVersionItemRepository campaignPolicyVersionItemRepository;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     // ---- 1. 공급사 상품 등록 ----
 
@@ -397,6 +400,62 @@ class CampaignFlowApiTest {
                 .andExpect(jsonPath("$.id").value(campaignId));
     }
 
+    @Test
+    void 상태_조회는_SKU별_남은_재고와_판매_기간_상태_및_카운터_기반_구매_가능_수량을_반환한다() throws Exception {
+        ProductFixture product = createProduct(uniqueName("상태조회상품"));
+        Long campaignId = createDraftCampaignWithSkus(
+                uniqueSlug("campaign-status"), product, 5, 3, 5);
+        Long buyerId = userRepository.findByEmail("buyer1@groupdrop.test").orElseThrow().getId();
+
+        jdbc.update("""
+                UPDATE campaign_inventories ci
+                   SET available_quantity = CASE cs.product_sku_id
+                       WHEN ? THEN 2
+                       WHEN ? THEN 0
+                   END
+                  FROM campaign_skus cs
+                 WHERE ci.campaign_sku_id = cs.id AND cs.campaign_id = ?
+                """, product.sku1Id(), product.sku2Id(), campaignId);
+        jdbc.update("""
+                INSERT INTO campaign_user_purchase_counters
+                    (campaign_id, user_id, quantity, created_at, updated_at)
+                VALUES (?, ?, 3, ?, ?)
+                """, campaignId, buyerId, java.sql.Timestamp.from(Instant.now(clock)),
+                java.sql.Timestamp.from(Instant.now(clock)));
+
+        mockMvc.perform(get("/api/campaigns/" + campaignId + "/status")
+                        .session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.campaignId").value(campaignId))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.startsAt").value("2026-08-01T00:00:00Z"))
+                .andExpect(jsonPath("$.endsAt").value("2026-08-10T00:00:00Z"))
+                .andExpect(jsonPath("$.remainingPurchaseQuantity").value(2))
+                .andExpect(jsonPath("$.skus.length()").value(2))
+                .andExpect(jsonPath("$.skus[0].productSkuId").value(product.sku1Id()))
+                .andExpect(jsonPath("$.skus[0].availableQuantity").value(2))
+                .andExpect(jsonPath("$.skus[1].productSkuId").value(product.sku2Id()))
+                .andExpect(jsonPath("$.skus[1].availableQuantity").value(0));
+    }
+
+    @Test
+    void 상태_조회는_카운터가_한도를_넘어도_음수_구매_가능_수량을_반환하지_않는다() throws Exception {
+        Long campaignId = createDraftCampaign(uniqueSlug("campaign-status-limit"));
+        Long buyerId = userRepository.findByEmail("buyer1@groupdrop.test").orElseThrow().getId();
+
+        jdbc.update("""
+                INSERT INTO campaign_user_purchase_counters
+                    (campaign_id, user_id, quantity, created_at, updated_at)
+                VALUES (?, ?, 3, ?, ?)
+                """, campaignId, buyerId, java.sql.Timestamp.from(Instant.now(clock)),
+                java.sql.Timestamp.from(Instant.now(clock)));
+
+        mockMvc.perform(get("/api/campaigns/" + campaignId + "/status")
+                        .session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.remainingPurchaseQuantity").value(0));
+    }
+
     // ---- 헬퍼 ----
 
     private void assertCampaignBadRequest(String requestJson, String expectedCode) throws Exception {
@@ -414,6 +473,33 @@ class CampaignFlowApiTest {
         String requestJson = campaignJson(
                 "초안 캠페인", slug, supplierId, product.productId(), 19900, 750,
                 "[{\"productSkuId\":" + product.sku1Id() + ",\"allocatedQuantity\":10,\"supplyUnitPrice\":17810}]");
+
+        MvcResult result = mockMvc.perform(post("/api/campaigns")
+                        .session(login("influencer@groupdrop.test"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return readLong(result, "$.id");
+    }
+
+    private Long createDraftCampaignWithSkus(String slug, ProductFixture product, int firstQuantity,
+                                               int secondQuantity, int perUserPurchaseLimit) throws Exception {
+        String requestJson = "{"
+                + "\"name\":\"상태 조회 캠페인\","
+                + "\"slug\":\"" + slug + "\","
+                + "\"supplierId\":" + supplierId() + ","
+                + "\"productId\":" + product.productId() + ","
+                + "\"dealPrice\":19900,"
+                + "\"startsAt\":\"2026-08-01T00:00:00Z\","
+                + "\"endsAt\":\"2026-08-10T00:00:00Z\","
+                + "\"perUserPurchaseLimit\":" + perUserPurchaseLimit + ","
+                + "\"commissionRateBp\":750,"
+                + "\"skus\":["
+                + "{\"productSkuId\":" + product.sku1Id() + ",\"allocatedQuantity\":" + firstQuantity
+                + ",\"supplyUnitPrice\":17810},"
+                + "{\"productSkuId\":" + product.sku2Id() + ",\"allocatedQuantity\":" + secondQuantity
+                + ",\"supplyUnitPrice\":17810}]}";
 
         MvcResult result = mockMvc.perform(post("/api/campaigns")
                         .session(login("influencer@groupdrop.test"))
