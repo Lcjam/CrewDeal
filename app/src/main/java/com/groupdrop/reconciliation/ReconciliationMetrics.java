@@ -11,8 +11,9 @@ import org.springframework.stereotype.Component;
  * 16.4의 대사 지표. {@code ledger_unbalanced_total}과 {@code reconciliation_mismatch_total}이
  * 기획서에 명시된 두 항목이다.
  *
- * <p>원장 불균형은 카운터가 아니라 <b>게이지</b>다. 대사 실행마다 전수 재검산한 결과이므로,
- * 카운터로 두면 같은 불균형 거래가 실행 횟수만큼 누적되어 "지금 몇 건이 깨져 있는가"를 말할 수 없다.
+ * <p>원장 불균형은 대사 실행마다 발견한 건수를 누적하는 카운터다. 현재 실행의 재검산 결과는
+ * {@code reconciliation_runs.ledger_unbalanced_count}에 보존하고, Prometheus에는 16.4가 고정한
+ * {@code ledger_unbalanced_total} 이름으로 발행한다.
  */
 @Component
 public class ReconciliationMetrics {
@@ -22,7 +23,7 @@ public class ReconciliationMetrics {
     private final Counter runs;
     private final Counter failures;
     private final Counter resolutions;
-    private final AtomicLong ledgerUnbalanced = new AtomicLong();
+    private final Counter ledgerUnbalanced;
     private final AtomicLong openDiscrepancies = new AtomicLong();
 
     public ReconciliationMetrics(MeterRegistry registry) {
@@ -30,7 +31,9 @@ public class ReconciliationMetrics {
         this.runs = registry.counter("reconciliation.run");
         this.failures = registry.counter("reconciliation.run.failed");
         this.resolutions = registry.counter("reconciliation.resolved");
-        registry.gauge("ledger.unbalanced", ledgerUnbalanced, AtomicLong::get);
+        // Micrometer Counter의 논리 이름 ledger.unbalanced는 Prometheus에서 정확히
+        // ledger_unbalanced_total로 노출된다 (16.4).
+        this.ledgerUnbalanced = registry.counter("ledger.unbalanced");
         registry.gauge("reconciliation.open", openDiscrepancies, AtomicLong::get);
     }
 
@@ -52,7 +55,9 @@ public class ReconciliationMetrics {
     }
 
     public void updateGauges(long unbalanced, long open) {
-        ledgerUnbalanced.set(unbalanced);
+        if (unbalanced > 0) {
+            ledgerUnbalanced.increment(unbalanced);
+        }
         openDiscrepancies.set(open);
     }
 }

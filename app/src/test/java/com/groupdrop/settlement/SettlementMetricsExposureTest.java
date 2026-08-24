@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * 5주차 완료 기준: 정산·대사 지표가 {@code /actuator/prometheus}에 노출된다 (16.4).
@@ -61,16 +62,20 @@ class SettlementMetricsExposureTest extends AbstractPaymentIntegrationTest {
         while (outboxWorker.drain() > 0) {
             // 환불 실행 → 역분개 → 회수까지 소진
         }
+        long unbalancedBefore = unbalancedTransactions();
+        insertUnbalancedTransaction();
+        double ledgerMetricBefore = meterRegistry.counter("ledger.unbalanced").count();
         reconciliations.run(0);
 
         assertThat(meterRegistry.counter("settlement.failed").count()).isEqualTo(failedBefore + 1.0);
         assertThat(meterRegistry.counter("settlement.completed").count()).isPositive();
         assertThat(meterRegistry.counter("settlement.recovered").count()).isPositive();
         assertThat(meterRegistry.counter("reconciliation.run").count()).isPositive();
-        assertThat(meterRegistry.get("ledger.unbalanced").gauge().value()).isNotNegative();
+        double expectedLedgerMetric = ledgerMetricBefore + unbalancedBefore + 1.0;
+        assertThat(meterRegistry.counter("ledger.unbalanced").count()).isEqualTo(expectedLedgerMetric);
         assertThat(meterRegistry.get("settlement.unrecovered.adjustments").gauge().value()).isNotNegative();
 
-        mockMvc.perform(get("/actuator/prometheus"))
+        MvcResult prometheus = mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("settlement_failed_total")))
                 .andExpect(content().string(containsString("settlement_completed_total")))
@@ -78,8 +83,42 @@ class SettlementMetricsExposureTest extends AbstractPaymentIntegrationTest {
                 .andExpect(content().string(containsString("settlement_recovered_total")))
                 .andExpect(content().string(containsString("settlement_unrecovered_adjustments")))
                 .andExpect(content().string(containsString("settlement_batches_blocked")))
-                .andExpect(content().string(containsString("ledger_unbalanced")))
+                // HELP 설명이 아니라 실제 Prometheus 샘플의 정확한 지표명을 검사한다.
+                .andExpect(content().string(containsString("\nledger_unbalanced_total ")))
                 .andExpect(content().string(containsString("reconciliation_run_total")))
-                .andExpect(content().string(containsString("reconciliation_open")));
+                .andExpect(content().string(containsString("reconciliation_open")))
+                .andReturn();
+        String sample = prometheus.getResponse().getContentAsString().lines()
+                .filter(line -> line.startsWith("ledger_unbalanced_total "))
+                .findFirst().orElseThrow();
+        assertThat(Double.parseDouble(sample.substring(sample.indexOf(' ') + 1)))
+                .isEqualTo(expectedLedgerMetric);
+    }
+
+    private long unbalancedTransactions() {
+        return jdbc.queryForObject("""
+                SELECT count(*) FROM (
+                    SELECT t.id FROM ledger_transactions t
+                      LEFT JOIN ledger_entries e ON e.transaction_id=t.id
+                     GROUP BY t.id
+                    HAVING COALESCE(SUM(CASE WHEN e.side='DEBIT' THEN e.amount ELSE 0 END),0)
+                        <> COALESCE(SUM(CASE WHEN e.side='CREDIT' THEN e.amount ELSE 0 END),0)
+                        OR count(e.id)=0
+                ) x
+                """, Long.class);
+    }
+
+    private void insertUnbalancedTransaction() {
+        long referenceId = -Math.max(1L, Math.abs(UUID.randomUUID().getMostSignificantBits()));
+        Long transactionId = jdbc.queryForObject("""
+                INSERT INTO ledger_transactions
+                    (transaction_type,reference_type,reference_id,occurred_at,created_at)
+                VALUES('PAYMENT','PAYMENT',?,now(),now()) RETURNING id
+                """, Long.class, referenceId);
+        Long accountId = jdbc.queryForObject("SELECT id FROM ledger_accounts ORDER BY id LIMIT 1", Long.class);
+        jdbc.update("""
+                INSERT INTO ledger_entries(transaction_id,account_id,side,amount)
+                VALUES(?,?,'DEBIT',1)
+                """, transactionId, accountId);
     }
 }

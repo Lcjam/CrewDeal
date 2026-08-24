@@ -104,13 +104,15 @@ public class PaymentRepository {
     }
 
     /** 이중 결제 패자 (PAY-01 보상). 보상 환불 실행은 4주차. */
-    public boolean markSuperseded(Long paymentId, String providerPaymentId, String reason, Instant now) {
+    public boolean markSuperseded(Long paymentId, String providerPaymentId, Instant approvedAt,
+                                  String reason, Instant now) {
         return jdbc.update("""
                 UPDATE payments
                    SET status = 'SUPERSEDED', provider_payment_id = COALESCE(provider_payment_id, ?),
-                       failure_code = 'DUPLICATE_PAYMENT', failure_reason = ?, updated_at = ?
+                       approved_at = COALESCE(approved_at, ?), failure_code = 'DUPLICATE_PAYMENT',
+                       failure_reason = ?, updated_at = ?
                  WHERE id = ? AND status IN ('PROCESSING', 'UNKNOWN')
-                """, providerPaymentId, truncate(reason, 500), ts(now), paymentId) == 1;
+                """, providerPaymentId, ts(approvedAt), truncate(reason, 500), ts(now), paymentId) == 1;
     }
 
     /** REF-02 환불 접수. {@code REFUNDING}은 환불 결과 불명 상태를 겸한다 (10.3, PAY-03). */

@@ -47,6 +47,7 @@ public class CampaignService {
     private final CampaignInventoryRepository campaignInventoryRepository;
     private final CampaignPolicyVersionRepository campaignPolicyVersionRepository;
     private final CampaignPolicyVersionItemRepository campaignPolicyVersionItemRepository;
+    private final CampaignPurchaseCounterReader campaignPurchaseCounterReader;
     private final Clock clock;
 
     public CampaignService(UserRepository userRepository,
@@ -59,6 +60,7 @@ public class CampaignService {
                             CampaignInventoryRepository campaignInventoryRepository,
                             CampaignPolicyVersionRepository campaignPolicyVersionRepository,
                             CampaignPolicyVersionItemRepository campaignPolicyVersionItemRepository,
+                            CampaignPurchaseCounterReader campaignPurchaseCounterReader,
                             Clock clock) {
         this.userRepository = userRepository;
         this.influencerRepository = influencerRepository;
@@ -70,6 +72,7 @@ public class CampaignService {
         this.campaignInventoryRepository = campaignInventoryRepository;
         this.campaignPolicyVersionRepository = campaignPolicyVersionRepository;
         this.campaignPolicyVersionItemRepository = campaignPolicyVersionItemRepository;
+        this.campaignPurchaseCounterReader = campaignPurchaseCounterReader;
         this.clock = clock;
     }
 
@@ -202,6 +205,38 @@ public class CampaignService {
         Campaign campaign = campaignRepository.findBySlug(slug)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다: " + slug));
         return toResponse(campaign);
+    }
+
+    /**
+     * 14.1 구매자 화면용 조회. 구매 한도는 주문 집계가 아니라 ORD-04의 사용자×캠페인 카운터를
+     * 읽어 계산한다. 조회와 주문 예약 사이에는 경쟁이 가능하므로, 이 값은 표시용이며 실제 주문
+     * 수락 여부는 OrderRepository의 조건부 UPDATE가 최종 결정한다.
+     */
+    @Transactional(readOnly = true)
+    public CampaignStatusResponse getCampaignStatus(String requesterEmail, Long campaignId) {
+        User buyer = requireUser(requesterEmail);
+        Campaign campaign = requireCampaign(campaignId);
+        List<CampaignSku> campaignSkus = campaignSkuRepository.findByCampaignId(campaign.getId());
+        Map<Long, CampaignInventory> inventoryByCampaignSkuId = new HashMap<>();
+        for (CampaignInventory inventory : campaignInventoryRepository.findByCampaignSkuIn(campaignSkus)) {
+            inventoryByCampaignSkuId.put(inventory.getCampaignSku().getId(), inventory);
+        }
+
+        int purchasedQuantity = campaignPurchaseCounterReader.findQuantity(campaignId, buyer.getId());
+        int remainingPurchaseQuantity = Math.max(0, campaign.getPerUserPurchaseLimit() - purchasedQuantity);
+        List<CampaignStatusResponse.SkuStatus> skuStatuses = campaignSkus.stream()
+                .map(campaignSku -> {
+                    CampaignInventory inventory = inventoryByCampaignSkuId.get(campaignSku.getId());
+                    return new CampaignStatusResponse.SkuStatus(
+                            campaignSku.getProductSku().getId(),
+                            campaignSku.getProductSku().getOptionName(),
+                            inventory == null ? 0 : inventory.getAvailableQuantity());
+                })
+                .toList();
+
+        return new CampaignStatusResponse(
+                campaign.getId(), campaign.getStatus(), campaign.getStartsAt(), campaign.getEndsAt(),
+                remainingPurchaseQuantity, skuStatuses);
     }
 
     private void applyTransition(Long campaignId, CampaignStatus from, CampaignStatus to) {

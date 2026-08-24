@@ -91,19 +91,23 @@ public class RefundReconciliationSupport {
      * @return 재발행했으면 true. 미처리 이벤트가 이미 있으면 손대지 않고 false.
      */
     public boolean republishRequestIfNoPending(RefundRepository.RefundSnapshot refund) {
-        if (outbox.hasPending(RefundInitiator.EVENT_REFUND_REQUESTED, refund.id())) {
-            log.debug("환불 {}은 미처리 이벤트가 남아 있어 재발행하지 않습니다 (워커 대기 중).", refund.id());
-            return false;
-        }
         Instant now = Instant.now(clock);
-        transactions.executeWithoutResult(status -> {
+        Boolean published = transactions.execute(status -> {
             String payload = json.write(new RefundInitiator.RefundRequestedPayload(refund.id(),
                     refund.paymentId(), refund.orderId(), refund.amount(), refund.compensation(),
                     now.toString()));
-            outbox.append(RefundInitiator.EVENT_REFUND_REQUESTED, "REFUND", refund.id(), payload, now);
+            if (outbox.appendIfNoPending(RefundInitiator.EVENT_REFUND_REQUESTED, "REFUND",
+                    refund.id(), payload, now).isEmpty()) {
+                return false;
+            }
             auditLogs.record(SOURCE, "REFUND_REQUEST_REPUBLISHED", "REFUND", refund.id(),
                     "PG에 환불 기록이 없고 미처리 이벤트도 없어 실행 이벤트를 재발행했습니다.", now);
+            return true;
         });
+        if (!Boolean.TRUE.equals(published)) {
+            log.debug("환불 {}은 미처리 이벤트가 남아 있어 재발행하지 않습니다 (워커 대기 중).", refund.id());
+            return false;
+        }
         log.info("대사가 환불 {}의 실행 이벤트를 재발행했습니다.", refund.id());
         return true;
     }

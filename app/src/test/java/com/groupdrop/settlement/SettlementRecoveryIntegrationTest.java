@@ -57,6 +57,8 @@ class SettlementRecoveryIntegrationTest extends AbstractPaymentIntegrationTest {
         assertThat(recoveries).allSatisfy(batch -> {
             assertThat(batch.status()).isEqualTo(SettlementBatchStatus.COMPLETED);
             assertThat(batch.totalAmount()).isNegative();
+            // 10.5의 PENDING → READY → PROCESSING 선점이 회수 배치에도 적용되어 실제 지급 시도는 1회다.
+            assertThat(batch.attempts()).isEqualTo(1);
         });
         assertThat(recoveryAmount(order.campaignId(), PayeeType.SUPPLIER)).isEqualTo(-SUPPLY_PER_UNIT);
         assertThat(recoveryAmount(order.campaignId(), PayeeType.INFLUENCER)).isEqualTo(-COMMISSION);

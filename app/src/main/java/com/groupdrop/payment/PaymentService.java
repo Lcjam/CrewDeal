@@ -1,6 +1,7 @@
 package com.groupdrop.payment;
 
 import com.groupdrop.common.ApiException;
+import com.groupdrop.common.CampaignTransactionBarrier;
 import com.groupdrop.common.GroupdropProperties;
 import com.groupdrop.common.IdempotencyRepository;
 import com.groupdrop.common.Json;
@@ -31,6 +32,7 @@ public class PaymentService {
     private static final String SOURCE = "request";
 
     private final UserRepository users;
+    private final CampaignTransactionBarrier campaignBarrier;
     private final PaymentRepository payments;
     private final IdempotencyRepository idempotency;
     private final PaymentFinalizer finalizer;
@@ -41,11 +43,13 @@ public class PaymentService {
     private final Json json;
     private final Clock clock;
 
-    public PaymentService(UserRepository users, PaymentRepository payments, IdempotencyRepository idempotency,
+    public PaymentService(UserRepository users, CampaignTransactionBarrier campaignBarrier,
+                          PaymentRepository payments, IdempotencyRepository idempotency,
                           PaymentFinalizer finalizer, PgClient pgClient, PaymentMetrics metrics,
                           GroupdropProperties properties, TransactionTemplate transactions,
                           Json json, Clock clock) {
         this.users = users;
+        this.campaignBarrier = campaignBarrier;
         this.payments = payments;
         this.idempotency = idempotency;
         this.finalizer = finalizer;
@@ -77,6 +81,12 @@ public class PaymentService {
 
     private Preparation prepare(User buyer, Long orderId, String scope, String key, CreatePaymentRequest request) {
         Instant now = Instant.now(clock);
+        CampaignTransactionBarrier.CampaignLock campaign = campaignBarrier.lockByOrderId(orderId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+        if (!campaign.allowsExistingOrderPayment()) {
+            throw new ApiException(HttpStatus.CONFLICT, "CAMPAIGN_NOT_PAYABLE",
+                    "강제 종료되었거나 결제를 허용하지 않는 캠페인입니다. 현재 상태: " + campaign.status());
+        }
         PaymentRepository.OrderForPayment order = payments.findOrderForPayment(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
         if (!order.buyerId().equals(buyer.getId())) {

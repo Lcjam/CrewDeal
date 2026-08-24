@@ -53,6 +53,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/webhooks/payments").permitAll()
                         .requestMatchers("/api/auth/login", "/actuator/health", "/actuator/info",
                                 "/actuator/prometheus", "/actuator/metrics/**").permitAll()
+                        // 운영 콘솔 정적 셸과 API 문서는 공개하지만, 콘솔이 호출하는 /api/admin/** 는 인증을 유지한다.
+                        .requestMatchers("/admin/**", "/v3/api-docs/**", "/v3/api-docs.yaml",
+                                "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) ->

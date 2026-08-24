@@ -178,7 +178,7 @@ public class OrderRepository {
     }
 
     /**
-     * ORD-03 만료 유예: 결제가 PROCESSING·UNKNOWN인 주문은 만료 대상에서 제외한다.
+     * ORD-03 만료 유예: 결제가 PROCESSING·UNKNOWN이거나 성공 확정된 주문은 만료 대상에서 제외한다.
      * 결과 불명인 결제의 재고를 먼저 풀면 11.6의 경쟁 창이 불필요하게 넓어진다.
      */
     public List<Long> lockExpirableOrderIds(Instant now, int limit) {
@@ -187,7 +187,7 @@ public class OrderRepository {
                  WHERE o.status = 'PENDING_PAYMENT' AND o.expires_at <= ?
                    AND NOT EXISTS (
                        SELECT 1 FROM payments p
-                        WHERE p.order_id = o.id AND p.status IN ('PROCESSING', 'UNKNOWN')
+                        WHERE p.order_id = o.id AND p.status IN ('PROCESSING', 'UNKNOWN', 'SUCCEEDED')
                    )
                  ORDER BY o.id
                  FOR UPDATE OF o SKIP LOCKED
@@ -202,7 +202,7 @@ public class OrderRepository {
                  WHERE id = ? AND status = 'PENDING_PAYMENT' AND expires_at <= ?
                    AND NOT EXISTS (
                        SELECT 1 FROM payments p
-                        WHERE p.order_id = orders.id AND p.status IN ('PROCESSING', 'UNKNOWN')
+                        WHERE p.order_id = orders.id AND p.status IN ('PROCESSING', 'UNKNOWN', 'SUCCEEDED')
                    )
                 RETURNING campaign_id, buyer_id, total_quantity
                 """, (rs, rowNum) -> new ExpiredOrder(

@@ -3,6 +3,7 @@ package com.groupdrop.outbox;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -28,6 +29,23 @@ public class OutboxRepository {
                 VALUES (?, ?, ?, ?, 'PENDING', 0, ?, ?)
                 RETURNING id
                 """, Long.class, eventType, aggregateType, aggregateId, payload, ts(now), ts(now));
+    }
+
+    /**
+     * 같은 유형·집계의 PENDING 이벤트를 DB 유니크 제약으로 한 건만 유지한다.
+     * REC-01 재발행의 check-then-insert 경쟁을 닫는 원자 연산이다.
+     */
+    public Optional<Long> appendIfNoPending(String eventType, String aggregateType, Long aggregateId,
+                                            String payload, Instant now) {
+        return jdbc.query("""
+                INSERT INTO outbox_events
+                    (event_type, aggregate_type, aggregate_id, payload, status, attempts, available_at, created_at)
+                VALUES (?, ?, ?, ?, 'PENDING', 0, ?, ?)
+                ON CONFLICT (event_type, aggregate_type, aggregate_id) WHERE status = 'PENDING'
+                DO NOTHING
+                RETURNING id
+                """, (rs, rowNum) -> rs.getLong("id"), eventType, aggregateType, aggregateId, payload,
+                ts(now), ts(now)).stream().findFirst();
     }
 
     /**
@@ -72,6 +90,16 @@ public class OutboxRepository {
                    SET status = 'FAILED', last_error = ?, processed_at = ?
                  WHERE id = ? AND status = 'PENDING'
                 """, truncate(error), ts(now), id);
+    }
+
+    /** REC-02 운영자 재처리: 실패로 종결된 이벤트만 다시 PENDING으로 되돌린다. */
+    public boolean retryFailed(Long id, Instant now) {
+        return jdbc.update("""
+                UPDATE outbox_events
+                   SET status = 'PENDING', attempts = 0, available_at = ?,
+                       last_error = NULL, processed_at = NULL
+                 WHERE id = ? AND status = 'FAILED'
+                """, ts(now), id) == 1;
     }
 
     /**

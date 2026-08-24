@@ -1,6 +1,7 @@
 package com.groupdrop.settlement;
 
 import com.groupdrop.common.AuditLogRepository;
+import com.groupdrop.common.CampaignTransactionBarrier;
 import com.groupdrop.ledger.LedgerAccount;
 import java.time.Clock;
 import java.time.Instant;
@@ -29,13 +30,17 @@ public class SettlementDeterminationService {
     private static final String SOURCE = "settlement-determination";
 
     private final SettlementRepository settlements;
+    private final CampaignTransactionBarrier campaignBarrier;
     private final AuditLogRepository auditLogs;
     private final SettlementMetrics metrics;
     private final Clock clock;
 
-    public SettlementDeterminationService(SettlementRepository settlements, AuditLogRepository auditLogs,
+    public SettlementDeterminationService(SettlementRepository settlements,
+                                          CampaignTransactionBarrier campaignBarrier,
+                                          AuditLogRepository auditLogs,
                                           SettlementMetrics metrics, Clock clock) {
         this.settlements = settlements;
+        this.campaignBarrier = campaignBarrier;
         this.auditLogs = auditLogs;
         this.metrics = metrics;
         this.clock = clock;
@@ -49,6 +54,9 @@ public class SettlementDeterminationService {
      */
     @Transactional
     public Result determine(Long campaignId) {
+        if (campaignBarrier.lockByCampaignId(campaignId).isEmpty()) {
+            return Result.notFound(campaignId);
+        }
         SettlementRepository.CampaignSettlementContext context = settlements.findCampaignContext(campaignId)
                 .orElse(null);
         if (context == null) {

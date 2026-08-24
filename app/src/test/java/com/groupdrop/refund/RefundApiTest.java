@@ -101,6 +101,23 @@ class RefundApiTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void 결제_성공_이벤트가_주문을_PAID로_만들기_전에는_환불을_접수하지_않는다() {
+        OrderFixture order = order(10, 1);
+        Long paymentId = pay(order).body().id();
+
+        assertThat(paymentStatus(paymentId)).isEqualTo("SUCCEEDED");
+        assertThat(orderStatus(order.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThatThrownBy(() -> requestRefund(paymentId))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("PAYMENT_NOT_REFUNDABLE");
+        assertThat(count("refunds", "payment_id=" + paymentId)).isZero();
+
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        assertThat(orderStatus(order.orderId())).isEqualTo("PAID");
+        assertThat(requestRefund(paymentId)).isNotNull();
+    }
+
+    @Test
     void 이미_환불이_접수된_결제에는_두번째_환불을_만들지_않는다() {
         OrderFixture order = order(10, 1);
         Long paymentId = pay(order).body().id();

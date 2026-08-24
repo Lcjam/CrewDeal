@@ -10,10 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 캠페인 생성·승인 흐름 API (CAM-01, CAM-02, 14.1). 재고 현황·구매 가능 수량 조회(GET .../status)는
- * 2주차 범위라 이번 주 구현에서 제외한다.
- */
+/** 캠페인 생성·승인·상태 조회 API (CAM-01~05, 14.1). */
 @RestController
 public class CampaignController {
 
@@ -55,6 +52,12 @@ public class CampaignController {
     @GetMapping("/api/campaigns/{campaignId}")
     public ResponseEntity<CampaignResponse> get(@PathVariable Long campaignId) {
         return ResponseEntity.ok(campaignService.getCampaign(campaignId));
+    }
+
+    @GetMapping("/api/campaigns/{campaignId}/status")
+    public ResponseEntity<CampaignStatusResponse> getStatus(Authentication authentication,
+                                                              @PathVariable Long campaignId) {
+        return ResponseEntity.ok(campaignService.getCampaignStatus(authentication.getName(), campaignId));
     }
 
     @GetMapping("/api/campaigns/slug/{slug}")

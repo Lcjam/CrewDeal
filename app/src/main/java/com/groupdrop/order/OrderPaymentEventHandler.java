@@ -81,11 +81,11 @@ public class OrderPaymentEventHandler implements OutboxHandler {
         if ("PAID".equals(status)) {
             return; // 이미 반영된 이벤트의 재전달
         }
-        if ("EXPIRED".equals(status) && orders.markRefundingFromExpired(orderId, now)) {
+        if ("EXPIRED".equals(status)) {
             // 11.6 경쟁: 만료가 이겨 재고가 이미 풀렸는데 결제는 성공했다. 재고를 되찾지 않고 자동 환불한다.
             // ops_hold는 여기서 세우지 않는다 — 환불이 성공하면 운영자가 할 일이 없고, 실패했을 때만
             // 실행 워커가 이관 플래그를 세운다 (10.2).
-            Long refundId = refundInitiator.initiate(payload.paymentId(), orderId, payload.amount(),
+            Long refundId = refundInitiator.initiateExpiredOrder(payload.paymentId(), orderId, payload.amount(),
                     "예약 만료 후 결제 성공 확인에 따른 자동 환불 (11.6)", "expiry-race");
             auditLogs.record("outbox", "ORDER_EXPIRED_BUT_PAID", "ORDER", orderId,
                     "결제 %d 성공이 만료 이후 확인되어 REFUNDING 전환 + 자동 환불 %d를 접수했습니다."

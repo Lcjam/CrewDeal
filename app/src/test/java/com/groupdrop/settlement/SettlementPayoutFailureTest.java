@@ -3,6 +3,8 @@ package com.groupdrop.settlement;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.groupdrop.payment.AbstractPaymentIntegrationTest;
+import java.time.Clock;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +25,8 @@ class SettlementPayoutFailureTest extends AbstractPaymentIntegrationTest {
     private SettlementRepository settlements;
     @Autowired
     private SettlementFailureInjector failureInjector;
+    @Autowired
+    private Clock clock;
 
     @AfterEach
     void disarmInjector() {
@@ -74,10 +78,18 @@ class SettlementPayoutFailureTest extends AbstractPaymentIntegrationTest {
         closeCampaign(order.campaignId(), 8);
         settlementService.run(ADMIN, order.campaignId());
 
-        // 10.5: hold API는 PENDING·READY 배치에만 동작한다. COMPLETED 배치도 대상이 아니다.
+        // 10.5: hold API는 PENDING·READY 배치에만 동작한다. 실제 조건부 전이로 PROCESSING 상태를
+        // 만든 뒤 검사한다. COMPLETED 배치 거부만으로는 "지급 중" 불가침을 증명하지 못한다.
         SettlementRepository.Batch completed = batches(order.campaignId()).getFirst();
-        assertThat(completed.status()).isEqualTo(SettlementBatchStatus.COMPLETED);
-        assertThat(settlements.markHeld(completed.id(), "지급 중 개입 시도", java.time.Instant.now())).isFalse();
+        Instant now = Instant.now(clock);
+        Long processingBatchId = settlements.insertBatch(order.campaignId(), completed.payeeType(),
+                completed.payeeId(), BatchType.RECOVERY, SettlementBatchStatus.PENDING, -1L, now, now);
+        assertThat(settlements.markReady(processingBatchId, now)).isTrue();
+        assertThat(settlements.claimForProcessing(processingBatchId, now)).isTrue();
+        assertThat(settlements.findBatch(processingBatchId).orElseThrow().status())
+                .isEqualTo(SettlementBatchStatus.PROCESSING);
+
+        assertThat(settlements.markHeld(processingBatchId, "지급 중 개입 시도", now)).isFalse();
     }
 
     private java.util.List<SettlementRepository.Batch> batches(Long campaignId) {

@@ -1,6 +1,7 @@
 package com.groupdrop.refund;
 
 import com.groupdrop.common.AuditLogRepository;
+import com.groupdrop.common.CampaignTransactionBarrier;
 import com.groupdrop.common.Json;
 import com.groupdrop.order.OrderRepository;
 import com.groupdrop.outbox.OutboxHandler;
@@ -34,6 +35,7 @@ public class RefundExecutionWorker implements OutboxHandler {
     private static final String SOURCE = "refund-worker";
 
     private final RefundRepository refunds;
+    private final CampaignTransactionBarrier campaignBarrier;
     private final PaymentRepository payments;
     private final OrderRepository orders;
     private final OutboxRepository outbox;
@@ -44,10 +46,12 @@ public class RefundExecutionWorker implements OutboxHandler {
     private final Json json;
     private final Clock clock;
 
-    public RefundExecutionWorker(RefundRepository refunds, PaymentRepository payments, OrderRepository orders,
+    public RefundExecutionWorker(RefundRepository refunds, CampaignTransactionBarrier campaignBarrier,
+                                 PaymentRepository payments, OrderRepository orders,
                                  OutboxRepository outbox, AuditLogRepository auditLogs, PgClient pgClient,
                                  RefundMetrics metrics, TransactionTemplate transactions, Json json, Clock clock) {
         this.refunds = refunds;
+        this.campaignBarrier = campaignBarrier;
         this.payments = payments;
         this.orders = orders;
         this.outbox = outbox;
@@ -100,6 +104,7 @@ public class RefundExecutionWorker implements OutboxHandler {
      * 확정 로직을 복사해 두 벌로 만들면 두 경로가 서로 다르게 낡는다.
      */
     void complete(RefundRepository.RefundSnapshot refund, PgClient.RefundResult result) {
+        campaignBarrier.requireByOrderId(refund.orderId());
         Instant now = Instant.now(clock);
         Instant refundedAt = result.refundedAt() == null ? now : result.refundedAt();
         if (!refunds.markCompleted(refund.id(), result.providerRefundId(), refundedAt, now)) {
@@ -110,7 +115,9 @@ public class RefundExecutionWorker implements OutboxHandler {
             if (!payments.markRefunded(refund.paymentId(), now)) {
                 throw new IllegalStateException("환불 완료 결제 전이에 실패했습니다: " + refund.paymentId());
             }
-            orders.markRefunded(refund.orderId(), now);
+            if (!orders.markRefunded(refund.orderId(), now)) {
+                throw new IllegalStateException("환불 완료 주문 전이에 실패했습니다: " + refund.orderId());
+            }
         }
         // 13.4: 역분개(LED-03)와 회수 배치는 refund.completed 소비자의 몫이다. 여기서 하지 않는 이유는
         // 실행(외부 호출)과 확정 후처리(내부 분개)를 같은 트랜잭션에 묶지 않기 위해서다.
@@ -129,6 +136,7 @@ public class RefundExecutionWorker implements OutboxHandler {
      * 물건 없는 주문이 정산 대상에 들어간다.
      */
     private void fail(RefundRepository.RefundSnapshot refund, PgClient.RefundResult result) {
+        campaignBarrier.requireByOrderId(refund.orderId());
         Instant now = Instant.now(clock);
         if (!refunds.markFailed(refund.id(), result.failureCode(), result.detail(), now)) {
             return;
@@ -148,7 +156,9 @@ public class RefundExecutionWorker implements OutboxHandler {
             throw new IllegalStateException("환불 실패 결제 복귀에 실패했습니다: " + refund.paymentId());
         }
         if (refunds.hasConfirmedReservation(refund.orderId())) {
-            orders.markPaidFromRefunding(refund.orderId(), now);
+            if (!orders.markPaidFromRefunding(refund.orderId(), now)) {
+                throw new IllegalStateException("환불 실패 주문 복귀에 실패했습니다: " + refund.orderId());
+            }
         } else {
             orders.flagOpsHold(refund.orderId(),
                     "만료 출신 주문의 환불이 실패했습니다. PAID 복귀와 정산 편입을 금지합니다 (10.2).", now);

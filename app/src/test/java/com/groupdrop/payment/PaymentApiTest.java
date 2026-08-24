@@ -95,6 +95,32 @@ class PaymentApiTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void 자연_종료_CLOSED_캠페인의_종료_직전_주문은_결제를_허용한다() {
+        OrderFixture order = order(10, 1);
+        jdbc.update("""
+                UPDATE campaigns SET status='CLOSED', closed_at=ends_at, updated_at=now() WHERE id=?
+                """, order.campaignId());
+
+        PaymentService.Outcome outcome = pay(order);
+
+        assertThat(outcome.body().status()).isEqualTo("SUCCEEDED");
+    }
+
+    @Test
+    void 조기_강제_종료_CLOSED_캠페인의_기존_주문은_신규_결제를_거부한다() {
+        OrderFixture order = order(10, 1);
+        jdbc.update("""
+                UPDATE campaigns SET status='CLOSED', closed_at=ends_at - interval '1 second', updated_at=now()
+                 WHERE id=?
+                """, order.campaignId());
+
+        assertThatThrownBy(() -> pay(order))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo("CAMPAIGN_NOT_PAYABLE"));
+        assertThat(count("payments", "order_id=" + order.orderId())).isZero();
+    }
+
+    @Test
     void 같은_멱등키_재요청은_최초_응답을_그대로_재생한다() {
         OrderFixture order = order(10, 1);
         String key = key();

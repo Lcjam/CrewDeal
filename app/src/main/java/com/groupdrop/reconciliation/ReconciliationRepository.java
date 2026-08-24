@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
 /** REC-01·REC-02 저장소. */
@@ -22,28 +23,48 @@ public class ReconciliationRepository {
     // ── 실행 이력 ────────────────────────────────────────────────────────────────────
 
     public Long startRun(int minAgeMinutes, Instant now) {
-        return jdbc.queryForObject("""
-                INSERT INTO reconciliation_runs (status, min_age_minutes, started_at)
-                VALUES ('RUNNING', ?, ?)
-                RETURNING id
-                """, Long.class, minAgeMinutes, ts(now));
+        try {
+            return jdbc.queryForObject("""
+                    INSERT INTO reconciliation_runs (status, min_age_minutes, started_at)
+                    VALUES ('RUNNING', ?, ?)
+                    RETURNING id
+                    """, Long.class, minAgeMinutes, ts(now));
+        } catch (DuplicateKeyException exception) {
+            throw new ReconciliationAlreadyRunningException(exception);
+        }
     }
 
-    public void completeRun(Long runId, int providerCount, int internalCount, int mismatchCount,
-                            int resolvedCount, int ledgerUnbalancedCount, Instant now) {
-        jdbc.update("""
+    /** 프로세스 강제 종료 등으로 남은 RUNNING 세대를 명시적으로 FAILED 처리한다. */
+    public int failStaleRuns(Instant staleBefore, Instant now) {
+        return jdbc.update("""
+                UPDATE reconciliation_runs
+                   SET status = 'FAILED', finished_at = ?,
+                       error = '실행 주기의 2배를 넘겨 중단된 RUNNING 세대를 자동 회수했습니다.'
+                 WHERE status = 'RUNNING' AND started_at <= ?
+                """, ts(now), ts(staleBefore));
+    }
+
+    public boolean completeRun(Long runId, int providerCount, int internalCount, int mismatchCount,
+                               int resolvedCount, int ledgerUnbalancedCount, Instant now) {
+        return jdbc.update("""
                 UPDATE reconciliation_runs
                    SET status = 'COMPLETED', provider_transaction_count = ?, internal_payment_count = ?,
                        mismatch_count = ?, resolved_count = ?, ledger_unbalanced_count = ?, finished_at = ?
-                 WHERE id = ?
+                 WHERE id = ? AND status = 'RUNNING'
                 """, providerCount, internalCount, mismatchCount, resolvedCount, ledgerUnbalancedCount,
-                ts(now), runId);
+                ts(now), runId) == 1;
     }
 
     public void failRun(Long runId, String error, Instant now) {
         jdbc.update("""
-                UPDATE reconciliation_runs SET status = 'FAILED', error = ?, finished_at = ? WHERE id = ?
+                UPDATE reconciliation_runs SET status = 'FAILED', error = ?, finished_at = ?
+                 WHERE id = ? AND status = 'RUNNING'
                 """, truncate(error, 1000), ts(now), runId);
+    }
+
+    public boolean isRunning(Long runId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT status = 'RUNNING' FROM reconciliation_runs WHERE id = ?", Boolean.class, runId));
     }
 
     public Optional<Run> findRun(Long runId) {
@@ -67,9 +88,12 @@ public class ReconciliationRepository {
      */
     public List<InternalPayment> findReconcilablePayments(Instant cutoff) {
         return jdbc.query("""
-                SELECT p.id, p.order_id, p.status, p.amount, p.provider_payment_id, p.created_at,
+                SELECT p.id, p.order_id, p.status, p.amount, p.provider_payment_id,
+                       p.approved_at, p.created_at,
                        COALESCE((SELECT SUM(r.amount) FROM refunds r
-                                  WHERE r.payment_id = p.id AND r.status = 'COMPLETED'), 0) AS refunded_amount
+                                  WHERE r.payment_id = p.id AND r.status = 'COMPLETED'), 0) AS refunded_amount,
+                       (SELECT MAX(r.completed_at) FROM refunds r
+                         WHERE r.payment_id = p.id AND r.status = 'COMPLETED') AS refund_completed_at
                   FROM payments p
                  WHERE p.created_at <= ?
                    AND NOT (p.status = 'FAILED' AND p.provider_payment_id IS NULL)
@@ -80,7 +104,9 @@ public class ReconciliationRepository {
     /** 해소 대상: 최소 경과 시간이 지난 비최종 결제 (REC-01의 해소 단계). */
     public List<InternalPayment> findNonFinalPayments(Instant cutoff) {
         return jdbc.query("""
-                SELECT p.id, p.order_id, p.status, p.amount, p.provider_payment_id, p.created_at, 0 AS refunded_amount
+                SELECT p.id, p.order_id, p.status, p.amount, p.provider_payment_id,
+                       NULL::TIMESTAMPTZ AS approved_at, p.created_at, 0 AS refunded_amount,
+                       NULL::TIMESTAMPTZ AS refund_completed_at
                   FROM payments p
                  WHERE p.created_at <= ? AND p.status IN ('PROCESSING', 'UNKNOWN')
                  ORDER BY p.id
@@ -95,33 +121,50 @@ public class ReconciliationRepository {
      */
     public void upsertOpen(Long runId, DiscrepancyType type, Long paymentId, Long orderId,
                            String providerPaymentId, String internalStatus, String providerStatus,
-                           Long internalAmount, Long providerAmount, String detail, Instant now) {
+                           Long internalAmount, Long providerAmount, String detail,
+                           Instant subjectOccurredAt, Instant now) {
         jdbc.update("""
+                WITH run_fence AS MATERIALIZED (
+                    SELECT id FROM reconciliation_runs
+                     WHERE id = ? AND status = 'RUNNING'
+                     FOR SHARE
+                )
                 INSERT INTO reconciliation_discrepancies
                     (run_id, last_seen_run_id, discrepancy_type, payment_id, order_id, provider_payment_id,
                      internal_status, provider_status, internal_amount, provider_amount, detail, status,
-                     detected_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
+                     subject_occurred_at, detected_at, updated_at)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ? FROM run_fence
                 ON CONFLICT (discrepancy_type, COALESCE(provider_payment_id, ''), COALESCE(payment_id, -1))
                     WHERE status = 'OPEN'
                 DO UPDATE SET last_seen_run_id = EXCLUDED.last_seen_run_id,
                               detail = EXCLUDED.detail,
+                              subject_occurred_at = EXCLUDED.subject_occurred_at,
                               updated_at = EXCLUDED.updated_at
-                """, runId, runId, type.name(), paymentId, orderId, providerPaymentId, internalStatus,
-                providerStatus, internalAmount, providerAmount, truncate(detail, 1000), ts(now), ts(now));
+                WHERE reconciliation_discrepancies.last_seen_run_id < EXCLUDED.last_seen_run_id
+                """, runId, runId, runId, type.name(), paymentId, orderId, providerPaymentId, internalStatus,
+                providerStatus, internalAmount, providerAmount, truncate(detail, 1000), ts(subjectOccurredAt),
+                ts(now), ts(now));
     }
 
     /**
      * 이번 실행에서 재검출되지 않은 미해결 건을 자동 해소한다. 조건이 사라진 불일치를 운영자가 손으로
      * 지우게 하면 목록이 과거의 잔해로 채워진다.
      */
-    public int resolveDisappeared(Long runId, Instant now) {
-        return jdbc.update("""
-                UPDATE reconciliation_discrepancies
+    public List<Long> resolveDisappeared(Long runId, Instant cutoff, Instant now) {
+        return jdbc.query("""
+                WITH run_fence AS MATERIALIZED (
+                    SELECT id FROM reconciliation_runs
+                     WHERE id = ? AND status = 'RUNNING'
+                     FOR SHARE
+                )
+                UPDATE reconciliation_discrepancies d
                    SET status = 'RESOLVED', resolved_at = ?, updated_at = ?,
                        resolution_note = COALESCE(resolution_note, '다음 대사에서 재검출되지 않아 자동 해소')
-                 WHERE status = 'OPEN' AND last_seen_run_id <> ?
-                """, ts(now), ts(now), runId);
+                  FROM run_fence
+                 WHERE d.status = 'OPEN' AND d.last_seen_run_id < ?
+                   AND d.subject_occurred_at IS NOT NULL AND d.subject_occurred_at <= ?
+                RETURNING d.id
+                """, (rs, rowNum) -> rs.getLong("id"), runId, ts(now), ts(now), runId, ts(cutoff));
     }
 
     public boolean resolve(Long discrepancyId, String note, Instant now) {
@@ -159,13 +202,15 @@ public class ReconciliationRepository {
     private static final String DISCREPANCY_SELECT = """
             SELECT d.id, d.run_id, d.last_seen_run_id, d.discrepancy_type, d.payment_id, d.order_id,
                    d.provider_payment_id, d.internal_status, d.provider_status, d.internal_amount,
-                   d.provider_amount, d.detail, d.status, d.resolution_note, d.detected_at, d.resolved_at
+                   d.provider_amount, d.detail, d.status, d.resolution_note, d.subject_occurred_at,
+                   d.detected_at, d.resolved_at
               FROM reconciliation_discrepancies d
             """;
 
     private InternalPayment mapInternalPayment(ResultSet rs, int rowNum) throws SQLException {
         return new InternalPayment(rs.getLong("id"), rs.getLong("order_id"), rs.getString("status"),
                 rs.getLong("amount"), rs.getString("provider_payment_id"), rs.getLong("refunded_amount"),
+                instant(rs.getTimestamp("approved_at")), instant(rs.getTimestamp("refund_completed_at")),
                 instant(rs.getTimestamp("created_at")));
     }
 
@@ -176,7 +221,8 @@ public class ReconciliationRepository {
                 rs.getString("provider_payment_id"), rs.getString("internal_status"),
                 rs.getString("provider_status"), rs.getObject("internal_amount", Long.class),
                 rs.getObject("provider_amount", Long.class), rs.getString("detail"), rs.getString("status"),
-                rs.getString("resolution_note"), instant(rs.getTimestamp("detected_at")),
+                rs.getString("resolution_note"), instant(rs.getTimestamp("subject_occurred_at")),
+                instant(rs.getTimestamp("detected_at")),
                 instant(rs.getTimestamp("resolved_at")));
     }
 
@@ -200,7 +246,8 @@ public class ReconciliationRepository {
                       int ledgerUnbalancedCount, Instant startedAt, Instant finishedAt, String error) { }
 
     public record InternalPayment(Long id, Long orderId, String status, long amount, String providerPaymentId,
-                                  long refundedAmount, Instant createdAt) {
+                                  long refundedAmount, Instant approvedAt, Instant refundCompletedAt,
+                                  Instant createdAt) {
 
         /** 10.3의 최종 상태. 비최종은 해소 단계의 대상이지 분류 대상이 아니다. */
         public boolean isFinal() {
@@ -222,5 +269,20 @@ public class ReconciliationRepository {
     public record Discrepancy(Long id, Long runId, Long lastSeenRunId, DiscrepancyType type, Long paymentId,
                               Long orderId, String providerPaymentId, String internalStatus,
                               String providerStatus, Long internalAmount, Long providerAmount, String detail,
-                              String status, String resolutionNote, Instant detectedAt, Instant resolvedAt) { }
+                              String status, String resolutionNote, Instant subjectOccurredAt,
+                              Instant detectedAt, Instant resolvedAt) { }
+
+    public static class ReconciliationAlreadyRunningException extends RuntimeException {
+
+        public ReconciliationAlreadyRunningException(Throwable cause) {
+            super("이미 실행 중인 대사가 있습니다.", cause);
+        }
+    }
+
+    public static class ReconciliationLeaseLostException extends RuntimeException {
+
+        public ReconciliationLeaseLostException(Long runId) {
+            super("대사 실행 소유권을 잃었습니다: " + runId);
+        }
+    }
 }
