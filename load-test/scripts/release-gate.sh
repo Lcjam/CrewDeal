@@ -9,6 +9,8 @@ PROJECT_DIR="$(cd "${LOAD_TEST_DIR}/.." && pwd)"
 APP_DIR="${PROJECT_DIR}/app"
 MOCK_PG_DIR="${PROJECT_DIR}/mock-pg"
 ACTIVE_PROJECT=''
+EVIDENCE_DIR="${PROJECT_DIR}/docs/reports/evidence"
+RUN_DATE="${RUN_DATE:-$(date -u +%F)}"
 
 cleanup() {
   local exit_code="$?"
@@ -73,47 +75,73 @@ stop_active_stack() {
 run_app_test() {
   local label="$1"; shift
   echo "== ${label} =="
-  (cd "${APP_DIR}" && ./gradlew test "$@")
+  (cd "${APP_DIR}" && ./gradlew --rerun-tasks test "$@")
+}
+
+record_stage() {
+  local label="$1" evidence="${EVIDENCE_DIR}/${RUN_DATE}-${1}.txt"; shift
+  mkdir -p "${EVIDENCE_DIR}"
+  {
+    echo "source_commit=$(git -C "${PROJECT_DIR}" rev-parse HEAD)"
+    echo "stage=${label}"
+    "$@"
+  } > >(tee "${evidence}") 2>&1
+}
+
+run_s1a() {
+  start_single_stack groupdrop-week6-s1a 58100 58101 55440
+  APP_URL=http://localhost:58100 DB_PORT=55440 DB_CONTAINER=groupdrop-week6-s1a-postgres-1 \
+    "${SCRIPT_DIR}/run-s1-a.sh"
+  stop_active_stack
+}
+
+run_s1b() {
+  start_two_instance_stack groupdrop-week6-s1b 58102 58103 58104 55441
+  APP1_URL=http://localhost:58102 APP2_URL=http://localhost:58103 DB_PORT=55441 \
+    DB_CONTAINER=groupdrop-week6-s1b-postgres-1 "${SCRIPT_DIR}/run-s1-b.sh"
+  stop_active_stack
+}
+
+run_refund_e2e() {
+  start_single_stack groupdrop-week6-refund 58105 58106 55442
+  APP_URL=http://localhost:58105 MOCK_PG_URL=http://localhost:58106 DB_PORT=55442 \
+    DB_CONTAINER=groupdrop-week6-refund-postgres-1 "${SCRIPT_DIR}/run-refund-e2e.sh"
+  stop_active_stack
+}
+
+run_settlement_e2e() {
+  start_single_stack groupdrop-week6-settlement 58107 58108 55443
+  APP_URL=http://localhost:58107 MOCK_PG_URL=http://localhost:58108 DB_PORT=55443 \
+    DB_CONTAINER=groupdrop-week6-settlement-postgres-1 "${SCRIPT_DIR}/run-settlement-e2e.sh"
+  stop_active_stack
 }
 
 echo '== S1-a: 단일 인스턴스 재고 100 / 주문 1,000 =='
-start_single_stack groupdrop-week6-s1a 58100 58101 55440
-APP_URL=http://localhost:58100 DB_PORT=55440 DB_CONTAINER=groupdrop-week6-s1a-postgres-1 \
-  "${SCRIPT_DIR}/run-s1-a.sh"
-stop_active_stack
+record_stage s1-a run_s1a
 
 echo '== S1-b: 두 인스턴스 균등 분산 재고 100 / 주문 1,000 =='
-start_two_instance_stack groupdrop-week6-s1b 58102 58103 58104 55441
-APP1_URL=http://localhost:58102 APP2_URL=http://localhost:58103 DB_PORT=55441 \
-  DB_CONTAINER=groupdrop-week6-s1b-postgres-1 "${SCRIPT_DIR}/run-s1-b.sh"
-stop_active_stack
+record_stage s1-b run_s1b
 
-run_app_test 'S2: 동일 멱등 키 동시 결제' --tests com.groupdrop.payment.PaymentConcurrencyTest
-run_app_test 'S3: 중복·역순 웹훅 Inbox 멱등' --tests com.groupdrop.payment.PaymentWebhookApiTest
-run_app_test 'S4-a: UNKNOWN 웹훅·조회 복구' --tests com.groupdrop.payment.PaymentFailureRecoveryTest
-run_app_test 'S4-b: 대사로 UNKNOWN 복구' --tests com.groupdrop.reconciliation.ReconciliationIntegrationTest
-run_app_test 'S5: 원장 차변·대변 균형' --tests com.groupdrop.ledger.LedgerIntegrationTest
-run_app_test 'S6: 정산 항목 중복 방지' --tests com.groupdrop.settlement.SettlementFlowIntegrationTest
-run_app_test 'S7: PG 불일치 대사 분류' --tests com.groupdrop.reconciliation.ReconciliationIntegrationTest
-run_app_test 'S8: 정산 후 환불 회수 배치' --tests com.groupdrop.settlement.SettlementRecoveryIntegrationTest
+record_stage s2 run_app_test 'S2: 동일 멱등 키 동시 결제' --tests com.groupdrop.payment.PaymentConcurrencyTest
+record_stage s3 run_app_test 'S3: 중복·역순 웹훅 Inbox 멱등' --tests com.groupdrop.payment.PaymentWebhookApiTest
+record_stage s4-a run_app_test 'S4-a: UNKNOWN 웹훅·조회 복구' --tests com.groupdrop.payment.PaymentFailureRecoveryTest
+record_stage s4-b run_app_test 'S4-b: 대사로 UNKNOWN 복구' --tests com.groupdrop.reconciliation.ReconciliationIntegrationTest
+record_stage s5 run_app_test 'S5: 원장 차변·대변 균형' --tests com.groupdrop.ledger.LedgerIntegrationTest
+record_stage s6 run_app_test 'S6: 정산 항목 중복 방지' --tests com.groupdrop.settlement.SettlementFlowIntegrationTest
+record_stage s7 run_app_test 'S7: PG 불일치 대사 분류' --tests com.groupdrop.reconciliation.ReconciliationIntegrationTest
+record_stage s8 run_app_test 'S8: 정산 후 환불 회수 배치' --tests com.groupdrop.settlement.SettlementRecoveryIntegrationTest
 
 echo '== Mock PG 계약: S4/S7 장애·대사 API =='
-(cd "${MOCK_PG_DIR}" && ./gradlew test)
+record_stage mock-pg bash -c "cd \"${MOCK_PG_DIR}\" && ./gradlew --rerun-tasks test"
 
 echo '== 실제 HTTP: S3/S4/S5 환불·원장 =='
-start_single_stack groupdrop-week6-refund 58105 58106 55442
-APP_URL=http://localhost:58105 MOCK_PG_URL=http://localhost:58106 DB_PORT=55442 \
-  DB_CONTAINER=groupdrop-week6-refund-postgres-1 "${SCRIPT_DIR}/run-refund-e2e.sh"
-stop_active_stack
+record_stage refund-e2e run_refund_e2e
 
 echo '== 실제 HTTP: S6/S7/S8 정산·대사·회수 =='
-start_single_stack groupdrop-week6-settlement 58107 58108 55443
-APP_URL=http://localhost:58107 MOCK_PG_URL=http://localhost:58108 DB_PORT=55443 \
-  DB_CONTAINER=groupdrop-week6-settlement-postgres-1 "${SCRIPT_DIR}/run-settlement-e2e.sh"
-stop_active_stack
+record_stage settlement-e2e run_settlement_e2e
 
 echo '== 17.4 실증: docker kill → 재기동 → UNKNOWN/Outbox/Inbox 복구 =='
-COMPOSE_PROJECT=groupdrop-week6-recovery APP_PORT=58112 APP2_PORT=58113 MOCK_PG_PORT=58111 POSTGRES_PORT=55436 \
-  "${SCRIPT_DIR}/run-compose-kill-recovery.sh"
+record_stage compose-kill-recovery env COMPOSE_PROJECT=groupdrop-week6-recovery APP_PORT=58112 APP2_PORT=58113 \
+  MOCK_PG_PORT=58111 POSTGRES_PORT=55436 "${SCRIPT_DIR}/run-compose-kill-recovery.sh"
 
 echo 'RELEASE GATE PASS: S1-a/b~S8 및 docker kill 복구 실증 완료'
