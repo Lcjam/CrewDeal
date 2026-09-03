@@ -37,14 +37,14 @@ public class ReservationExpiryService {
             if (order == null) {
                 continue;
             }
+            if (!orderRepository.decrementPurchaseCounter(
+                    order.campaignId(), order.buyerId(), order.totalQuantity(), now)) {
+                throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
+            }
             for (OrderRepository.ExpiredReservation reservation : orderRepository.expireReservations(orderId, now)) {
                 if (!orderRepository.restoreInventory(reservation.inventoryId(), reservation.quantity())) {
                     throw new IllegalStateException("예약 재고 복구 불변식 위반: inventoryId=" + reservation.inventoryId());
                 }
-            }
-            if (!orderRepository.decrementPurchaseCounter(
-                    order.campaignId(), order.buyerId(), order.totalQuantity(), now)) {
-                throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
             }
             campaignsToRefresh.add(order.campaignId());
             expiredCount++;

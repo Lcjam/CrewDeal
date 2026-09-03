@@ -79,11 +79,11 @@ public class PaymentFinalizer {
         return Result.APPLIED;
     }
 
-    public Result fail(PaymentRepository.PaymentSnapshot payment, String failureCode,
+    public Result fail(PaymentRepository.PaymentSnapshot payment, String providerPaymentId, String failureCode,
                        String failureReason, String source) {
         campaignBarrier.requireByOrderId(payment.orderId());
         Instant now = Instant.now(clock);
-        if (!payments.markFailed(payment.id(), failureCode, failureReason, now)) {
+        if (!payments.markFailed(payment.id(), providerPaymentId, failureCode, failureReason, now)) {
             return Result.ALREADY_SETTLED;
         }
         appendFinalizedEvent(payment, "FAILED", now);

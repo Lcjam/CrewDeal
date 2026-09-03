@@ -67,8 +67,9 @@ public class StubPgClient implements PgClient {
             case SUCCEED -> ConfirmResult.succeeded(charge(command), Instant.now());
             case DECLINE -> {
                 // 가상 PG와 동일하게 거절도 PG에 남는 거래다. 남기지 않으면 대사가 "PG에 없음"으로 읽는다.
-                record(nextProviderPaymentId(), command, "FAILED");
-                yield ConfirmResult.failed("PG_DECLINED", "테스트 거절 모드");
+                String providerPaymentId = nextProviderPaymentId();
+                record(providerPaymentId, command, "FAILED");
+                yield ConfirmResult.failed(providerPaymentId, "PG_DECLINED", "테스트 거절 모드");
             }
             case SUCCEED_BUT_TIMEOUT -> {
                 charge(command);

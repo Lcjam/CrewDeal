@@ -71,6 +71,48 @@ class SettlementPayoutFailureTest extends AbstractPaymentIntegrationTest {
     }
 
     @Test
+    void FAILED_정산_재시도는_지급_전에_다시_대조하고_불일치면_HELD로_보낸다() {
+        OrderFixture order = order(10, 1);
+        pay(order);
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        closeCampaign(order.campaignId(), 8);
+
+        failureInjector.armOnce();
+        settlementService.run(ADMIN, order.campaignId());
+        SettlementRepository.Batch failed = batches(order.campaignId()).stream()
+                .filter(batch -> batch.status() == SettlementBatchStatus.FAILED)
+                .findFirst().orElseThrow();
+        // 실패 후 원장 합과 동결 금액이 달라진 상태를 만들어, 재시도가 verify를 우회하면 지급될 결함을 고정한다.
+        jdbc.update("UPDATE settlement_batches SET total_amount=total_amount+1 WHERE id=?", failed.id());
+
+        SettlementService.SettlementBatchResponse retried = settlementService.retry(ADMIN, failed.id());
+
+        assertThat(retried.status()).isEqualTo("HELD");
+        assertThat(retried.holdReason()).contains("배치 구성 불일치");
+        assertThat(count("ledger_transactions",
+                "transaction_type='PAYOUT' AND reference_id=" + failed.id())).isZero();
+    }
+
+    @Test
+    void FAILED_배치도_운영자가_HELD로_보류할_수_있다() {
+        OrderFixture order = order(10, 1);
+        pay(order);
+        assertThat(outboxWorker.drain()).isEqualTo(1);
+        closeCampaign(order.campaignId(), 8);
+
+        failureInjector.armOnce();
+        settlementService.run(ADMIN, order.campaignId());
+        SettlementRepository.Batch failed = batches(order.campaignId()).stream()
+                .filter(batch -> batch.status() == SettlementBatchStatus.FAILED)
+                .findFirst().orElseThrow();
+
+        SettlementService.SettlementBatchResponse held = settlementService.hold(ADMIN, failed.id(), "운영자 점검");
+
+        assertThat(held.status()).isEqualTo("HELD");
+        assertThat(held.holdReason()).isEqualTo("운영자 점검");
+    }
+
+    @Test
     void 지급_중인_배치는_운영자가_보류할_수_없다() {
         OrderFixture order = order(10, 1);
         pay(order);

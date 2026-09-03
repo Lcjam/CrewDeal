@@ -47,13 +47,16 @@ class OrderIntegrationTest {
 
         OrderResponse response = orderService.createOrder("buyer1@groupdrop.test", fixture.campaignId(),
                 key(), new CreateOrderRequest(List.of(
-                        new CreateOrderRequest.Item(fixture.sku1Id(), 2),
-                        new CreateOrderRequest.Item(fixture.sku2Id(), 3))));
+                        new CreateOrderRequest.Item(fixture.sku2Id(), 3),
+                        new CreateOrderRequest.Item(fixture.sku1Id(), 2))));
 
         assertThat(response.status()).isEqualTo("PENDING_PAYMENT");
         assertThat(response.totalQuantity()).isEqualTo(5);
         assertThat(response.totalAmount()).isEqualTo(99_500);
         assertThat(response.items()).hasSize(2).allMatch(item -> item.reservationStatus().equals("ACTIVE"));
+        // 요청 순서와 무관하게 SKU 잠금 순서는 하나여야 한다. 역순 주문 간 데드락을 막는다.
+        assertThat(response.items()).extracting(OrderResponse.Item::productSkuId)
+                .containsExactly(fixture.sku1Id(), fixture.sku2Id());
         assertThat(count("orders", "id = " + response.id())).isEqualTo(1);
         assertThat(count("order_items", "order_id = " + response.id())).isEqualTo(2);
         assertThat(count("stock_reservations sr JOIN order_items oi ON oi.id=sr.order_item_id",

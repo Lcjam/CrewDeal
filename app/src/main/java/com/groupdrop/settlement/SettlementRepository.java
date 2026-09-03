@@ -92,10 +92,11 @@ public class SettlementRepository {
 
     public Optional<CampaignSettlementContext> findCampaignContext(Long campaignId) {
         return jdbc.query("""
-                SELECT c.id, c.status, c.settlement_determined_at, c.supplier_id, c.influencer_id
+                SELECT c.id, c.status, c.closed_at, c.settlement_determined_at, c.supplier_id, c.influencer_id
                   FROM campaigns c WHERE c.id = ?
                 """, (rs, rowNum) -> new CampaignSettlementContext(rs.getLong("id"), rs.getString("status"),
-                instant(rs.getTimestamp("settlement_determined_at")), rs.getLong("supplier_id"),
+                instant(rs.getTimestamp("closed_at")), instant(rs.getTimestamp("settlement_determined_at")),
+                rs.getLong("supplier_id"),
                 rs.getLong("influencer_id")), campaignId).stream().findFirst();
     }
 
@@ -195,13 +196,22 @@ public class SettlementRepository {
                 """, ts(now), batchId) == 1;
     }
 
-    /** 대사 불일치·원장 이상 또는 운영자 보류: {@code PENDING·READY → HELD} (10.5). */
+    /** 대사 불일치·원장 이상 또는 운영자 보류: {@code PENDING·READY·FAILED → HELD} (10.5). */
     public boolean markHeld(Long batchId, String reason, Instant now) {
         return jdbc.update("""
                 UPDATE settlement_batches
                    SET status = 'HELD', hold_reason = ?, updated_at = ?
-                 WHERE id = ? AND status IN ('PENDING', 'READY')
+                 WHERE id = ? AND status IN ('PENDING', 'READY', 'FAILED')
                 """, reason, ts(now), batchId) == 1;
+    }
+
+    /** 재시도 전 지급 전 대조를 위해 {@code FAILED → PENDING}으로 되돌린다 (SET-02). */
+    public boolean returnFailedToPending(Long batchId, Instant now) {
+        return jdbc.update("""
+                UPDATE settlement_batches
+                   SET status = 'PENDING', updated_at = ?
+                 WHERE id = ? AND status = 'FAILED'
+                """, ts(now), batchId) == 1;
     }
 
     /**
@@ -452,8 +462,8 @@ public class SettlementRepository {
         return timestamp == null ? null : timestamp.toInstant();
     }
 
-    public record CampaignSettlementContext(Long campaignId, String status, Instant determinedAt,
-                                            Long supplierId, Long influencerId) { }
+    public record CampaignSettlementContext(Long campaignId, String status, Instant closedAt,
+                                            Instant determinedAt, Long supplierId, Long influencerId) { }
 
     public record OrderPayable(Long orderId, long amount) { }
 

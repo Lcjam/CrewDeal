@@ -84,7 +84,7 @@ public class SettlementService {
         if (!payouts.holdByOperator(batchId, reason == null ? "운영자 보류" : reason, requesterEmail)) {
             // 10.5: PROCESSING 중 보류는 허용하지 않는다.
             throw new ApiException(HttpStatus.CONFLICT, "SETTLEMENT_NOT_HOLDABLE",
-                    "PENDING·READY 배치만 보류할 수 있습니다.");
+                    "PENDING·READY·FAILED 배치만 보류할 수 있습니다.");
         }
         return SettlementBatchResponse.from(requireBatch(batchId));
     }

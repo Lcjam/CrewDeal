@@ -2,6 +2,7 @@ package com.groupdrop.settlement;
 
 import com.groupdrop.common.AuditLogRepository;
 import com.groupdrop.common.CampaignTransactionBarrier;
+import com.groupdrop.common.GroupdropProperties;
 import com.groupdrop.ledger.LedgerAccount;
 import java.time.Clock;
 import java.time.Instant;
@@ -33,16 +34,18 @@ public class SettlementDeterminationService {
     private final CampaignTransactionBarrier campaignBarrier;
     private final AuditLogRepository auditLogs;
     private final SettlementMetrics metrics;
+    private final GroupdropProperties properties;
     private final Clock clock;
 
     public SettlementDeterminationService(SettlementRepository settlements,
                                           CampaignTransactionBarrier campaignBarrier,
                                           AuditLogRepository auditLogs,
-                                          SettlementMetrics metrics, Clock clock) {
+                                          SettlementMetrics metrics, GroupdropProperties properties, Clock clock) {
         this.settlements = settlements;
         this.campaignBarrier = campaignBarrier;
         this.auditLogs = auditLogs;
         this.metrics = metrics;
+        this.properties = properties;
         this.clock = clock;
     }
 
@@ -66,9 +69,18 @@ public class SettlementDeterminationService {
             return Result.skipped(campaignId, "캠페인 상태가 CLOSED가 아닙니다: " + context.status());
         }
 
+        Instant now = Instant.now(clock);
+        Instant graceCutoff = now.minus(properties.settlementGracePeriod());
+        if (context.closedAt() == null || context.closedAt().isAfter(graceCutoff)) {
+            String reason = "정산 유예기간이 아직 경과하지 않았습니다.";
+            auditLogs.record(SOURCE, "SETTLING_DEFERRED", "CAMPAIGN", campaignId, reason, now);
+            metrics.recordDeferred();
+            log.info("캠페인 {}의 정산 진입을 보류합니다 — {}", campaignId, reason);
+            return Result.deferred(campaignId, reason);
+        }
+
         long pendingEvents = settlements.countUnprocessedFinalizationEvents(campaignId);
         long unfinalized = settlements.countUnfinalizedPayments(campaignId);
-        Instant now = Instant.now(clock);
         if (pendingEvents > 0 || unfinalized > 0) {
             String reason = "미처리 확정 이벤트 %d건, 미확정 결제 %d건".formatted(pendingEvents, unfinalized);
             auditLogs.record(SOURCE, "SETTLING_DEFERRED", "CAMPAIGN", campaignId, reason, now);
