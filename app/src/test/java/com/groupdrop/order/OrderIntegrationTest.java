@@ -10,12 +10,16 @@ import com.groupdrop.TestcontainersConfiguration;
 import com.groupdrop.common.ApiException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.IntStream;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -95,26 +99,33 @@ class OrderIntegrationTest {
         assertThat(count("campaign_user_purchase_counters", "campaign_id = " + fixture.campaignId())).isZero();
     }
 
-    @Test
+    @RepeatedTest(5)
     void 동일_사용자의_동시_주문은_구매_제한을_넘지_않는다() throws Exception {
-        CampaignFixture fixture = campaign(100, 0, 5);
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
+        int limit = 10;
+        int quantity = 3;
+        CampaignFixture fixture = campaign(100, 0, limit);
+        List<Result> results = concurrentOrders(fixture,
+                java.util.Collections.nCopies(12, "buyer1@groupdrop.test"), quantity);
+        long successes = results.stream().filter(Result::success).count();
 
-        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
-            Future<Result> first = executor.submit(() -> concurrentOrder(fixture, ready, start));
-            Future<Result> second = executor.submit(() -> concurrentOrder(fixture, ready, start));
-            ready.await();
-            start.countDown();
+        assertThat(results).allMatch(result -> result.success() || result.code().equals("PURCHASE_LIMIT_EXCEEDED"));
+        assertThat(successes).isEqualTo(limit / quantity);
+        assertThat(counter(fixture.campaignId(), buyerId("buyer1@groupdrop.test"))).isLessThanOrEqualTo(limit);
+        assertThat(count("orders", "campaign_id = " + fixture.campaignId())).isEqualTo(successes);
+        assertInventory(fixture.inventory1Id(), 100, 100 - (int) successes * quantity,
+                (int) successes * quantity, 0);
+    }
 
-            assertThat(List.of(first.get(), second.get()))
-                    .extracting(Result::code)
-                    .containsExactlyInAnyOrder("SUCCESS", "PURCHASE_LIMIT_EXCEEDED");
-        }
+    @RepeatedTest(5)
+    void 동시_주문은_재고를_초과_예약하지_않는다() throws Exception {
+        CampaignFixture fixture = campaign(10, 0, 30);
+        List<Result> results = concurrentOrders(fixture, buyers(30), 1);
+        long successes = results.stream().filter(Result::success).count();
 
-        assertThat(counter(fixture.campaignId(), buyerId("buyer1@groupdrop.test"))).isEqualTo(3);
-        assertThat(count("orders", "campaign_id = " + fixture.campaignId())).isEqualTo(1);
-        assertInventory(fixture.inventory1Id(), 100, 97, 3, 0);
+        assertThat(results).allMatch(result -> result.success() || result.code().equals("INVENTORY_SOLD_OUT"));
+        assertThat(successes).isEqualTo(10);
+        assertThat(count("orders", "campaign_id = " + fixture.campaignId())).isEqualTo(successes);
+        assertInventory(fixture.inventory1Id(), 10, 0, 10, 0);
     }
 
     @Test
@@ -178,19 +189,45 @@ class OrderIntegrationTest {
         assertInventory(secondCampaign.inventory1Id(), 5, 5, 0, 0);
     }
 
-    private Result concurrentOrder(CampaignFixture fixture, CountDownLatch ready, CountDownLatch start) {
-        ready.countDown();
+    private List<Result> concurrentOrders(CampaignFixture fixture, List<String> buyers, int quantity) throws Exception {
+        CyclicBarrier barrier = new CyclicBarrier(buyers.size());
+        try (ExecutorService executor = Executors.newFixedThreadPool(buyers.size())) {
+            List<Future<Result>> futures = new ArrayList<>();
+            for (String buyer : buyers) {
+                futures.add(executor.submit(() -> concurrentOrder(fixture, buyer, quantity, barrier)));
+            }
+            List<Result> results = new ArrayList<>();
+            for (Future<Result> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        }
+    }
+
+    private Result concurrentOrder(CampaignFixture fixture, String buyer, int quantity, CyclicBarrier barrier) {
         try {
-            start.await();
-            orderService.createOrder("buyer1@groupdrop.test", fixture.campaignId(), key(),
-                    new CreateOrderRequest(List.of(new CreateOrderRequest.Item(fixture.sku1Id(), 3))));
+            barrier.await();
+            orderService.createOrder(buyer, fixture.campaignId(), key(),
+                    new CreateOrderRequest(List.of(new CreateOrderRequest.Item(fixture.sku1Id(), quantity))));
             return new Result("SUCCESS");
         } catch (ApiException exception) {
             return new Result(exception.getCode());
-        } catch (InterruptedException exception) {
+        } catch (InterruptedException | BrokenBarrierException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(exception);
         }
+    }
+
+    private List<String> buyers(int count) {
+        Instant now = Instant.now();
+        return IntStream.range(0, count).mapToObj(index -> {
+            String email = "stock-buyer-" + UUID.randomUUID() + "@groupdrop.test";
+            jdbc.update("""
+                    INSERT INTO users(email,password_hash,display_name,role,created_at)
+                    SELECT ?, password_hash, ?, 'BUYER', ? FROM users WHERE email='buyer1@groupdrop.test'
+                    """, email, "stock buyer " + index, Timestamp.from(now));
+            return email;
+        }).toList();
     }
 
     private CampaignFixture campaign(int inventory1, int inventory2, int purchaseLimit) {
@@ -289,5 +326,9 @@ class OrderIntegrationTest {
 
     private record CampaignFixture(long campaignId, long sku1Id, long sku2Id,
                                    long inventory1Id, long inventory2Id) { }
-    private record Result(String code) { }
+    private record Result(String code) {
+        boolean success() {
+            return code.equals("SUCCESS");
+        }
+    }
 }
