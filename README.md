@@ -46,22 +46,22 @@ cd ../load-test && ./scripts/run-s1-b.sh
 cd ../load-test && ./scripts/run-compose-kill-recovery.sh
 ```
 
-S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 2026-08-24 최종 S1-a·S1-b와 `docker kill` 복구 실증은 모두 통과했으며, 조건과 실제 수치는 아래 보고서에 기록했습니다.
+S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 최종 회귀에서는 app 148건과 mock-pg 24건, 총 172건이 통과했습니다.
 
 ## 성공 기준과 문서
 
 | 기준 | 검증 대상 | 상태·근거 |
 |---|---|---|
-| S1-a/b | 재고 100개·1,000 주문, 단일/2인스턴스 | [부하 테스트 보고서](docs/reports/load-test-report.md) |
-| S2 | 결제 멱등 키 동시 10건 | [최종 회귀 보고서](docs/reports/final-regression-report.md) |
-| S3 | 중복 웹훅 10회, Inbox·주문·원장 1회 | [결제 장애 복구](docs/reports/payment-failure-recovery.md) |
-| S4-a/b | UNKNOWN의 웹훅·대사 복구 | [결제 장애 복구](docs/reports/payment-failure-recovery.md) |
-| S5 | 원장 차변=대변 | [최종 회귀 보고서](docs/reports/final-regression-report.md) |
-| S6 | 수령 주체별 정산 항목 중복 방지 | [동시성 해결 과정](docs/reports/concurrency-resolution.md) |
-| S7 | PG-내부 불일치 분류·노출 | [최종 회귀 보고서](docs/reports/final-regression-report.md) |
-| S8 | 정산 후 환불 회수·미회수 잔액 | [최종 회귀 보고서](docs/reports/final-regression-report.md) |
+| S1-a/b | 재고 100개·1,000 주문, 단일/2인스턴스 | k6 시나리오와 재고·예약 불변식 SQL |
+| S2 | 결제 멱등 키 동시 10건 | 결제 동시성 통합 테스트 |
+| S3 | 중복 웹훅 10회, Inbox·주문·원장 1회 | 웹훅 Inbox 통합 테스트 |
+| S4-a/b | UNKNOWN의 웹훅·대사 복구 | 웹훅·PG 재조회 복구 테스트 |
+| S5 | 원장 차변=대변 | 원장 통합 테스트 |
+| S6 | 수령 주체별 정산 항목 중복 방지 | 정산 동시성 통합 테스트 |
+| S7 | PG-내부 불일치 분류·노출 | 대사 통합 테스트 |
+| S8 | 정산 후 환불 회수·미회수 잔액 | 회수 배치 통합 테스트 |
 
-추가 참고: [제품 기획 SSOT](docs/plan/groupdrop-product-plan.md), [ERD](docs/erd.md), [ADR](docs/adr/README.md), [6주차 체크포인트](docs/reports/week-6-checkpoint.md).
+내부 기획·ADR·운영 보고서는 공개 저장소에서 제외하며, 구현과 자동화 테스트가 공개본의 검증 근거입니다.
 
 ## 보안 주의
 
