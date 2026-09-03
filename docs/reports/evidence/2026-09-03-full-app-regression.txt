@@ -1,0 +1,30 @@
+source_commit=cbf48f4ee4c0d4dfc4e2ec2b00d292d706f36d8a
+stage=full-app-regression
+> Task :cleanTest
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-09-03T16:49:13.203+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-03T16:49:13.204+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-09-03T16:49:13.205+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-09-03T16:49:13.404+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-03T16:49:13.405+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Shutdown initiated...
+2026-09-03T16:49:13.410+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Shutdown completed.
+2026-09-03T16:49:13.559+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-03T16:49:13.560+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Shutdown initiated...
+2026-09-03T16:49:13.561+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Shutdown completed.
+2026-09-03T16:49:13.695+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-03T16:49:13.696+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Shutdown initiated...
+2026-09-03T16:49:13.696+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Shutdown completed.
+2026-09-03T16:49:13.849+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-03T16:49:13.849+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Shutdown initiated...
+2026-09-03T16:49:13.850+09:00  INFO 86209 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Shutdown completed.
+> Task :test
+
+BUILD SUCCESSFUL in 28s
+5 actionable tasks: 5 executed
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
