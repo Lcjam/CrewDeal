@@ -1,0 +1,330 @@
+source_commit=cbf48f4ee4c0d4dfc4e2ec2b00d292d706f36d8a
+stage=s1-a
+ Image groupdrop-mock-pg:local Building 
+ Image groupdrop-app:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.02kB done
+#1 DONE 0.0s
+
+#2 [mock-pg internal] load build definition from Dockerfile
+#2 transferring dockerfile: 509B done
+#2 DONE 0.0s
+
+#3 [app internal] load build definition from Dockerfile
+#3 transferring dockerfile: 509B done
+#3 DONE 0.0s
+
+#4 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
+#4 ...
+
+#5 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#6 DONE 1.4s
+
+#4 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
+#4 DONE 1.4s
+
+#7 [app internal] load .dockerignore
+#7 transferring context: 80B done
+#7 DONE 0.0s
+
+#8 [mock-pg internal] load .dockerignore
+#8 transferring context: 80B done
+#8 DONE 0.0s
+
+#9 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:ce5767b7222312d42395f5bab033cd91f09e44032a2f21bdfd7b5b912dbe1e77
+#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:ce5767b7222312d42395f5bab033cd91f09e44032a2f21bdfd7b5b912dbe1e77 0.0s done
+#9 DONE 0.0s
+
+#10 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf
+#10 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf 0.0s done
+#10 DONE 0.0s
+
+#11 [mock-pg internal] load build context
+#11 transferring context: 140.84kB 0.0s done
+#11 DONE 0.0s
+
+#12 [app internal] load build context
+#12 transferring context: 895.00kB 0.0s done
+#12 DONE 0.0s
+
+#13 [mock-pg build 4/7] COPY gradle ./gradle
+#13 CACHED
+
+#14 [mock-pg build 5/7] RUN chmod +x gradlew
+#14 CACHED
+
+#15 [mock-pg build 6/7] COPY src ./src
+#15 CACHED
+
+#16 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#16 CACHED
+
+#17 [mock-pg stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#17 CACHED
+
+#18 [mock-pg stage-1 3/4] WORKDIR /app
+#18 CACHED
+
+#19 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#19 CACHED
+
+#20 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#20 CACHED
+
+#21 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#21 CACHED
+
+#22 [app build 2/7] WORKDIR /workspace
+#22 CACHED
+
+#23 [app build 4/7] COPY gradle ./gradle
+#23 CACHED
+
+#24 [app build 5/7] RUN chmod +x gradlew
+#24 CACHED
+
+#25 [mock-pg] exporting to image
+#25 exporting layers done
+#25 exporting manifest sha256:975bb36795e24c4388b9df0b83964c1406c05c0e7755180f008713ac8bb2fc92 done
+#25 exporting config sha256:873bff80ba19b378ef5c0e231fcf30e09e4673d933e5dfd8b340aae575175f36 done
+#25 exporting attestation manifest sha256:3994a303856360009ab43eb50ea9583fdd83875e3420a2c2a67a19af9cac255f done
+#25 exporting manifest list sha256:e62cfb9c4468e16e72dd7e8ee4e0d4dd9cffd8e20d19e4fae72f918bae852a60
+#25 exporting manifest list sha256:e62cfb9c4468e16e72dd7e8ee4e0d4dd9cffd8e20d19e4fae72f918bae852a60 done
+#25 naming to docker.io/library/groupdrop-mock-pg:local done
+#25 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#25 DONE 0.1s
+
+#26 [app build 6/7] COPY src ./src
+#26 DONE 0.0s
+
+#27 [mock-pg] resolving provenance for metadata file
+#27 DONE 0.0s
+
+#28 [app build 7/7] RUN ./gradlew --no-daemon bootJar
+#28 0.232 Fetching distribution.
+#28 0.232 Downloading https://services.gradle.org/distributions/gradle-9.5.1-bin.zip
+#28 1.037 .............10%.............20%..............30%.............40%.............50%..............60%.............70%..............80%.............90%.............100%
+#28 5.064 
+#28 5.064 Welcome to Gradle 9.5.1!
+#28 5.064 
+#28 5.064 Here are the highlights of this release:
+#28 5.064  - Task provenance in reports and failure messages
+#28 5.064  - Type-safe accessors for precompiled Kotlin Settings plugins
+#28 5.064 
+#28 5.064 For more details see https://docs.gradle.org/9.5.1/release-notes.html
+#28 5.064 
+#28 5.065 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.5.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+#28 5.563 Daemon will be stopped at the end of the build 
+#28 28.07 > Task :compileJava
+#28 28.07 > Task :processResources
+#28 28.07 > Task :classes
+#28 28.16 > Task :resolveMainClassName
+#28 30.17 > Task :bootJar
+#28 30.17 
+#28 30.17 BUILD SUCCESSFUL in 29s
+#28 30.17 4 actionable tasks: 4 executed
+#28 30.17 Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
+#28 DONE 30.6s
+
+#17 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#17 CACHED
+
+#18 [app stage-1 3/4] WORKDIR /app
+#18 CACHED
+
+#29 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#29 DONE 0.1s
+
+#30 [app] exporting to image
+#30 exporting layers
+#30 exporting layers 1.5s done
+#30 exporting manifest sha256:750ceb61cd52f2972a6b24a7645de16e91dc8c54add0e19e59e4f3e85f840dee done
+#30 exporting config sha256:3abe9f5b64a103f6f671acadf5fb3ca657258157161dfa8a7cf93b89ca379f0d done
+#30 exporting attestation manifest sha256:31e5460089fae6d60f517b811ace38e80ef8a5190f967a4259aea7c40edb1eb9 done
+#30 exporting manifest list sha256:d23e9bee8417551e1cb377c45e1a9b34e1cf7d0da13be02722461829a5f0e5f5 done
+#30 naming to docker.io/library/groupdrop-app:local done
+#30 unpacking to docker.io/library/groupdrop-app:local
+#30 unpacking to docker.io/library/groupdrop-app:local 0.3s done
+#30 DONE 1.9s
+
+#31 [app] resolving provenance for metadata file
+#31 DONE 0.0s
+ Image groupdrop-mock-pg:local Built 
+ Image groupdrop-app:local Built 
+ Network groupdrop-week6-s1a_default Creating 
+ Volume groupdrop-week6-s1a_pgdata Creating 
+ Volume groupdrop-week6-s1a_pgdata Creating 
+ Network groupdrop-week6-s1a_default Creating 
+ Volume groupdrop-week6-s1a_pgdata Created 
+ Volume groupdrop-week6-s1a_pgdata Created 
+ Network groupdrop-week6-s1a_default Created 
+ Network groupdrop-week6-s1a_default Created 
+ Container groupdrop-week6-s1a-mock-pg-1 Creating 
+ Container groupdrop-week6-s1a-postgres-1 Creating 
+ Container groupdrop-week6-s1a-mock-pg-1 Created 
+ Container groupdrop-week6-s1a-postgres-1 Created 
+ Container groupdrop-week6-s1a-app-1 Creating 
+ Container groupdrop-week6-s1a-app-1 Created 
+ Container groupdrop-week6-s1a-postgres-1 Starting 
+ Container groupdrop-week6-s1a-mock-pg-1 Starting 
+ Container groupdrop-week6-s1a-postgres-1 Started 
+ Container groupdrop-week6-s1a-postgres-1 Waiting 
+ Container groupdrop-week6-s1a-mock-pg-1 Started 
+ Container groupdrop-week6-s1a-postgres-1 Healthy 
+ Container groupdrop-week6-s1a-app-1 Starting 
+ Container groupdrop-week6-s1a-app-1 Started 
+INSERT 0 200
+ s1a_buyer_count 
+-----------------
+             200
+(1 row)
+
+ buyer_fixture_assertion 
+-------------------------
+                       1
+(1 row)
+
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /scripts/k6/s1-a.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 200 max VUs, 2m30s max duration (incl. graceful stop):
+              * s1a: 5 iterations for each of 200 VUs (maxDuration: 2m0s, gracefulStop: 30s)
+
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+Run    [ 100% ] setup()
+s1a    [   0% ]
+
+running (0m16.0s), 159/200 VUs, 607 complete and 0 interrupted iterations
+s1a    [  61% ] 200 VUs  0m00.8s/2m0s  0607/1000 iters, 5 per VU
+
+     ✓ 201 success or inventory sold out
+
+     checks.........................: 100.00% 1000 out of 1000
+     data_received..................: 638 kB  39 kB/s
+     data_sent......................: 337 kB  21 kB/s
+     http_req_blocked...............: avg=7.96ms   min=625ns  med=2.79µs   max=71.38ms  p(90)=49.84ms  p(95)=58.7ms   p(99)=66.75ms 
+     http_req_connecting............: avg=7.9ms    min=0s     med=0s       max=71.33ms  p(90)=49.78ms  p(95)=58.24ms  p(99)=66.74ms 
+     http_req_duration..............: avg=151.64ms min=2.31ms med=92ms     max=717.17ms p(90)=352.49ms p(95)=452.71ms p(99)=559.75ms
+       { expected_response:true }...: avg=151.64ms min=2.31ms med=92ms     max=717.17ms p(90)=352.49ms p(95)=452.71ms p(99)=559.75ms
+     http_req_failed................: 0.00%   0 out of 1200
+     http_req_receiving.............: avg=503.39µs min=7.7µs  med=51.2µs   max=25.03ms  p(90)=603.5µs  p(95)=2.44ms   p(99)=10.48ms 
+     http_req_sending...............: avg=84.05µs  min=2.7µs  med=11.29µs  max=12.15ms  p(90)=50.09µs  p(95)=123.95µs p(99)=502.37µs
+     http_req_tls_handshaking.......: avg=0s       min=0s     med=0s       max=0s       p(90)=0s       p(95)=0s       p(99)=0s      
+     http_req_waiting...............: avg=151.05ms min=2.28ms med=91.98ms  max=717.04ms p(90)=352.21ms p(95)=452.19ms p(99)=559.72ms
+     http_reqs......................: 1200    73.625252/s
+     iteration_duration.............: avg=176.59ms min=2.81ms med=133.54ms max=785.1ms  p(90)=407.48ms p(95)=496.99ms p(99)=622.61ms
+     iterations.....................: 1000    61.354377/s
+   ✓ order_attempts.................: 1000    61.354377/s
+   ✓ order_server_errors............: 0.00%   0 out of 1000
+   ✓ order_sold_out.................: 900     55.218939/s
+   ✓ order_successes................: 100     6.135438/s
+     vus............................: 159     min=0            max=159
+     vus_max........................: 200     min=200          max=200
+
+
+running (0m16.3s), 000/200 VUs, 1000 complete and 0 interrupted iterations
+s1a  ✓ [ 100% ] 200 VUs  0m01.1s/2m0s  1000/1000 iters, 5 per VU
+ id | initial_quantity | available_quantity | reserved_quantity | sold_quantity 
+----+------------------+--------------------+-------------------+---------------
+(0 rows)
+
+ inventory_balance_violations | assertion 
+------------------------------+-----------
+                            0 |         1
+(1 row)
+
+ reservation_cross_violations | assertion 
+------------------------------+-----------
+                            0 |         1
+(1 row)
+
+ successful_orders | ordered_quantity | available | reserved | sold 
+-------------------+------------------+-----------+----------+------
+               100 |              100 |         0 |      100 |    0
+(1 row)
+
+ s1a_order_assertion 
+---------------------
+                   1
+(1 row)
+
+ s1a_inventory_assertion 
+-------------------------
+                       1
+(1 row)
+
+ purchase_counter_violations | assertion 
+-----------------------------+-----------
+                           0 |         1
+(1 row)
+
+S1-a PASS campaign_id=1 product_sku_id=1
+ Container groupdrop-week6-s1a-mock-pg-1 Stopping 
+ Container groupdrop-week6-s1a-app-1 Stopping 
+ Container groupdrop-week6-s1a-mock-pg-1 Stopped 
+ Container groupdrop-week6-s1a-mock-pg-1 Removing 
+ Container groupdrop-week6-s1a-app-1 Stopped 
+ Container groupdrop-week6-s1a-app-1 Removing 
+ Container groupdrop-week6-s1a-mock-pg-1 Removed 
+ Container groupdrop-week6-s1a-app-1 Removed 
+ Container groupdrop-week6-s1a-postgres-1 Stopping 
+ Container groupdrop-week6-s1a-postgres-1 Stopped 
+ Container groupdrop-week6-s1a-postgres-1 Removing 
+ Container groupdrop-week6-s1a-postgres-1 Removed 
+ Volume groupdrop-week6-s1a_pgdata Removing 
+ Network groupdrop-week6-s1a_default Removing 
+ Volume groupdrop-week6-s1a_pgdata Removed 
+ Network groupdrop-week6-s1a_default Removed 
