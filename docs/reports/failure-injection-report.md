@@ -1,0 +1,40 @@
+# 장애 주입 테스트 보고서
+
+- 기준: 기획서 v1.10 17.4, PAY-03·PAY-04, REF-02, SET-02·03
+- 작성일: 2026-09-03
+- 실행 소스: 기준 커밋 `cbf48f4ee4c0d4dfc4e2ec2b00d292d706f36d8a`
+- 판정: **PASS**
+
+## 주입 지점과 기대 결과
+
+| 주입 | 자동 테스트 층 | 실증 층 | 성공 판정 |
+|---|---|---|---|
+| PG 성공 후 응답 유실 | `UNKNOWN` 기록 후 웹훅·대사 확정 | 보류 웹훅 replay | 결제 `SUCCEEDED`, 주문 `PAID` |
+| PG 응답 지연 | 타임아웃을 실패로 단정하지 않음 | 필요 시 mock-pg 모드 | 허용 전이표 밖 상태 없음 |
+| 중복·역순 웹훅 | Inbox 유니크·허용 전이 | replay | Inbox/주문/원장 1회 |
+| 환불 응답 유실 | `REFUNDING` 유지·복구 | mock-pg 모드 | 중복 환불·역분개 없음 |
+| 정산 지급 실패 | 테스트 프로파일 실패 주입 | 해당 없음(내부 가상 지급) | `PROCESSING → FAILED`, 사유·시도 횟수 저장 |
+| 앱 서버 종료 | 복구 로직 직접 호출 | Compose `docker kill` 후 재기동 | 종료 SQL 위반 0 |
+
+정산 지급은 외부 PG 호출이 아닌 내부 가상 처리이므로, 실패 주입은 실제 외부 장애가 아니라 상태 전이 검증용이다. 이 한계는 기획서 17.4의 명시적 설계다.
+
+## docker kill 실증 명령
+
+```bash
+cd load-test
+./scripts/run-compose-kill-recovery.sh
+```
+
+스크립트는 격리된 Compose 프로젝트만 생성·종료한다. 두 인스턴스 중 `app`을 `docker kill`한 뒤 재기동하고, 보류된 웹훅을 재발사해 Outbox/Inbox를 소진한다. 마지막에 `payment-recovery-invariants.sql`을 실행한다.
+
+## 현재 실제 결과
+
+| 검증 | 결과 |
+|---|---|
+| 전체 자동 회귀 | PASS — app `cleanTest test` 157 tests, mock-pg `--rerun-tasks test` 24 tests; 실패·오류·스킵 0 |
+| 최신 `docker kill` 실증 | PASS — UNKNOWN 20 → `SUCCEEDED` 20 / `PAID` 20; Outbox app/app2 9/11(총 20=PROCESSED 20), Inbox 9/11(총 20), 모든 SQL 위반 0, `recovery_assertion=1` |
+| 장애 주입 전체 회귀 판정 | PASS — release gate 전체 PASS |
+
+실증은 campaign 1에서 수행했다. 정산 지급 실패 주입의 한계는 위 표처럼 유지하며, 이 보고서는 실제 `docker kill` 복구와 종료 SQL 결과를 근거로 한다.
+
+원본 실행 로그: [전체 앱 회귀](evidence/2026-09-03-full-app-regression.txt), [docker-kill 복구](evidence/2026-09-03-compose-kill-recovery.txt), [환불 E2E](evidence/2026-09-03-refund-e2e.txt).
