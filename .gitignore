@@ -8,6 +8,10 @@
 /docs/
 *.md
 !/README.md
+!/docs/
+!/docs/reports/
+!/docs/reports/evidence/
+!/docs/reports/evidence/*.txt
 
 # Gradle / Java
 .gradle/
