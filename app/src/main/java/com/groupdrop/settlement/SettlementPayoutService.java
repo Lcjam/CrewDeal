@@ -172,8 +172,22 @@ public class SettlementPayoutService {
         return Outcome.FAILED;
     }
 
-    /** 운영자 재시도 (14.4). {@code FAILED → PROCESSING}은 10.5의 허용 전이다. */
+    /** 운영자 재시도. FAILED 배치도 지급 전에 SET-02 대조를 다시 통과해야 한다. */
     public Outcome retry(Long batchId) {
+        SettlementRepository.Batch batch = settlements.findBatch(batchId).orElse(null);
+        if (batch == null) {
+            return Outcome.SKIPPED;
+        }
+        if (batch.status() == SettlementBatchStatus.FAILED) {
+            Instant now = Instant.now(clock);
+            if (!Boolean.TRUE.equals(transactions.execute(status ->
+                    settlements.returnFailedToPending(batchId, now)))) {
+                return Outcome.SKIPPED;
+            }
+            if (!verify(batchId)) {
+                return Outcome.SKIPPED;
+            }
+        }
         return payout(batchId);
     }
 

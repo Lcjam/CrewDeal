@@ -117,14 +117,14 @@ public class OrderPaymentEventHandler implements OutboxHandler {
             log.debug("주문 {}은 아직 만료 시각 전이므로 결제 실패 후에도 예약을 유지합니다.", orderId);
             return;
         }
+        if (!orders.decrementPurchaseCounter(
+                expired.campaignId(), expired.buyerId(), expired.totalQuantity(), now)) {
+            throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
+        }
         for (OrderRepository.ExpiredReservation reservation : orders.expireReservations(orderId, now)) {
             if (!orders.restoreInventory(reservation.inventoryId(), reservation.quantity())) {
                 throw new IllegalStateException("예약 재고 복구 불변식 위반: inventoryId=" + reservation.inventoryId());
             }
-        }
-        if (!orders.decrementPurchaseCounter(
-                expired.campaignId(), expired.buyerId(), expired.totalQuantity(), now)) {
-            throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
         }
         refreshAfterCommit(expired.campaignId());
     }

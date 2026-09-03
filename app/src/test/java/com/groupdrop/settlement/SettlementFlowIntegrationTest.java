@@ -294,6 +294,13 @@ class SettlementFlowIntegrationTest extends AbstractPaymentIntegrationTest {
         outboxWorker.drain();
         closeCampaign(order.campaignId(), 3);
 
+        SettlementService.RunResult manual = settlementService.run(ADMIN, order.campaignId());
+
+        assertThat(manual.outcome()).isEqualTo("DEFERRED");
+        assertThat(manual.reason()).contains("유예기간");
+        assertThat(campaignStatus(order.campaignId())).isEqualTo("CLOSED");
+        assertThat(settlements.findBatchesOfCampaign(order.campaignId())).isEmpty();
+
         settlementScheduler.runOnce();
 
         assertThat(campaignStatus(order.campaignId())).isEqualTo("CLOSED");

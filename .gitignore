@@ -1,6 +1,14 @@
 # Claude Code
 .claude/settings.local.json
 
+# Private agent configuration and internal project artifacts
+.agents/
+.claude/
+.codex/
+/docs/
+*.md
+!/README.md
+
 # Gradle / Java
 .gradle/
 build/

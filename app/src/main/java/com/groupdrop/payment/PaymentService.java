@@ -140,7 +140,7 @@ public class PaymentService {
             }
             case FAILED -> {
                 payments.finishAttempt(preparation.attemptId(), "FAILED", result.detail(), now);
-                finalizer.fail(payment, result.failureCode(), result.detail(), SOURCE);
+                finalizer.fail(payment, result.providerPaymentId(), result.failureCode(), result.detail(), SOURCE);
             }
             case TIMEOUT -> {
                 // 타임아웃은 실패가 아니다. 웹훅·조회·대사가 확정할 때까지 UNKNOWN으로 둔다 (PAY-03).

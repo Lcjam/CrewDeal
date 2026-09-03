@@ -88,12 +88,14 @@ public class PaymentRepository {
                 """, providerPaymentId, ts(approvedAt), ts(now), paymentId) == 1;
     }
 
-    public boolean markFailed(Long paymentId, String failureCode, String failureReason, Instant now) {
+    public boolean markFailed(Long paymentId, String providerPaymentId, String failureCode,
+                              String failureReason, Instant now) {
         return jdbc.update("""
                 UPDATE payments
-                   SET status = 'FAILED', failure_code = ?, failure_reason = ?, updated_at = ?
+                   SET status = 'FAILED', provider_payment_id = COALESCE(provider_payment_id, ?),
+                       failure_code = ?, failure_reason = ?, updated_at = ?
                  WHERE id = ? AND status IN ('PROCESSING', 'UNKNOWN')
-                """, failureCode, truncate(failureReason, 500), ts(now), paymentId) == 1;
+                """, providerPaymentId, failureCode, truncate(failureReason, 500), ts(now), paymentId) == 1;
     }
 
     public boolean markUnknown(Long paymentId, Instant now) {

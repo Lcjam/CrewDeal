@@ -60,8 +60,8 @@ public interface PgClient {
             return new ConfirmResult(Outcome.SUCCEEDED, providerPaymentId, approvedAt, null, null);
         }
 
-        public static ConfirmResult failed(String failureCode, String detail) {
-            return new ConfirmResult(Outcome.FAILED, null, null, failureCode, detail);
+        public static ConfirmResult failed(String providerPaymentId, String failureCode, String detail) {
+            return new ConfirmResult(Outcome.FAILED, providerPaymentId, null, failureCode, detail);
         }
 
         public static ConfirmResult timeout(String detail) {

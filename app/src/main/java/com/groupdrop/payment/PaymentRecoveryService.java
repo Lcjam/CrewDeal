@@ -67,7 +67,7 @@ public class PaymentRecoveryService {
                 }
                 case FAILED -> {
                     payments.finishAttempt(attemptId, "FAILED", result.detail(), now);
-                    finalizer.fail(current, result.failureCode(), result.detail(), SOURCE);
+                    finalizer.fail(current, result.providerPaymentId(), result.failureCode(), result.detail(), SOURCE);
                 }
                 case TIMEOUT -> {
                     payments.finishAttempt(attemptId, "TIMEOUT", result.detail(), now);

@@ -64,7 +64,8 @@ public class PaymentWebhookInboxHandler implements InboxHandler {
             case "SUCCEEDED" -> apply(payment, payload,
                     finalizer.succeed(payment, payload.providerPaymentId(), parseOccurredAt(payload), SOURCE), now);
             case "FAILED", "DECLINED" -> apply(payment, payload,
-                    finalizer.fail(payment, "PG_DECLINED", "웹훅이 실패를 통지했습니다.", SOURCE), now);
+                    finalizer.fail(payment, payload.providerPaymentId(), "PG_DECLINED",
+                            "웹훅이 실패를 통지했습니다.", SOURCE), now);
             default -> ignore(payment.id(), payload,
                     "현재 상태 %s에서 허용되지 않는 전이를 요구하는 이벤트입니다: %s"
                             .formatted(payment.status(), payload.status()), now);
@@ -72,7 +73,7 @@ public class PaymentWebhookInboxHandler implements InboxHandler {
     }
 
     /**
-     * 성공 응답이 유실된 결제는 providerPaymentId를 모른다. 이때는 주문으로 잇는데,
+     * 성공 응답이 유실된 결제는 providerPaymentId를 모른다. 이때만 주문으로 잇는데,
      * PAY-01이 "주문당 비최종 결제 1건"을 보장하므로 지목이 유일하다. 후보가 여럿이면
      * 추측하지 않고 무시한다 — 잘못 이으면 남의 결제를 확정하는 사고가 된다.
      */
@@ -88,7 +89,12 @@ public class PaymentWebhookInboxHandler implements InboxHandler {
         if (orderId == null) {
             return null;
         }
-        List<PaymentRepository.PaymentSnapshot> candidates = payments.findNonFinalByOrderId(orderId);
+        if (!"SUCCEEDED".equals(payload.status())) {
+            return null;
+        }
+        List<PaymentRepository.PaymentSnapshot> candidates = payments.findNonFinalByOrderId(orderId).stream()
+                .filter(candidate -> candidate.providerPaymentId() == null)
+                .toList();
         return candidates.size() == 1 ? candidates.getFirst() : null;
     }
 

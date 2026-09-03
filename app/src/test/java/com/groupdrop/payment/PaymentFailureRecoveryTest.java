@@ -104,7 +104,7 @@ class PaymentFailureRecoveryTest extends AbstractPaymentIntegrationTest {
                 """, paymentId, "mpay_" + paymentId, order.totalAmount());
         backdatePayment(paymentId, 3600);
 
-        assertThat(sweeper.sweep()).isPositive();
+        sweeper.scheduledSweep();
 
         assertThat(paymentStatus(paymentId)).isEqualTo("UNKNOWN");
         // 결과를 모르는 단계이므로 아직 확정 이벤트는 없다.
@@ -120,7 +120,8 @@ class PaymentFailureRecoveryTest extends AbstractPaymentIntegrationTest {
                 """, Long.class, order.orderId(), order.totalAmount());
         backdatePayment(paymentId, 3600);
 
-        assertThat(sweeper.sweep()).isPositive();
+        // 프로덕션 스케줄러 진입점이 트랜잭션 서비스 프록시를 거쳐야 한다 (13.4).
+        sweeper.scheduledSweep();
 
         assertThat(paymentStatus(paymentId)).isEqualTo("FAILED");
         assertThat(jdbc.queryForObject("SELECT failure_code FROM payments WHERE id=?", String.class, paymentId))
@@ -137,8 +138,32 @@ class PaymentFailureRecoveryTest extends AbstractPaymentIntegrationTest {
         Long paymentId = pay(order).body().id();
         jdbc.update("UPDATE payments SET status='PROCESSING' WHERE id=?", paymentId);
 
-        sweeper.sweep();
+        sweeper.scheduledSweep();
         assertThat(paymentStatus(paymentId)).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void 거절_결제의_지연_웹훅은_재시도로_만든_결제를_확정하지_않고_IGNORED로_종결한다() throws Exception {
+        OrderFixture order = order(10, 1);
+        pgClient.setMode(StubPgClient.Mode.DECLINE);
+        Long declinedPaymentId = pay(order).body().id();
+        String declinedProviderPaymentId = jdbc.queryForObject(
+                "SELECT provider_payment_id FROM payments WHERE id=?", String.class, declinedPaymentId);
+        assertThat(paymentStatus(declinedPaymentId)).isEqualTo("FAILED");
+        assertThat(declinedProviderPaymentId).isNotBlank();
+
+        pgClient.setMode(StubPgClient.Mode.SUCCEED);
+        Long retriedPaymentId = pay(order).body().id();
+        assertThat(paymentStatus(retriedPaymentId)).isEqualTo("SUCCEEDED");
+
+        String eventId = "evt-delayed-decline-" + declinedPaymentId;
+        postWebhook(webhookPayload(eventId, declinedProviderPaymentId, order.orderId(), "FAILED",
+                order.totalAmount())).andExpect(status().isOk());
+        assertThat(inboxWorker.drain()).isEqualTo(1);
+
+        assertThat(paymentStatus(retriedPaymentId)).isEqualTo("SUCCEEDED");
+        assertThat(jdbc.queryForObject("SELECT status FROM inbox_events WHERE provider_event_id=?", String.class,
+                eventId)).isEqualTo("IGNORED");
     }
 
     @Test

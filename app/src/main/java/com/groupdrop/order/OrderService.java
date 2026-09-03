@@ -141,15 +141,15 @@ public class OrderService {
             throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
                     "취소 처리 중 결제가 진행되어 취소하지 못했습니다. 결제 확정 후 다시 시도하세요.");
         }
-        for (OrderRepository.ExpiredReservation reservation : orderRepository.releaseReservations(orderId, now)) {
-            if (!orderRepository.restoreInventory(reservation.inventoryId(), reservation.quantity())) {
-                throw new IllegalStateException("취소 재고 복구 불변식 위반: inventoryId=" + reservation.inventoryId());
-            }
-        }
         OrderRepository.OrderHeader header = order.header();
         if (!orderRepository.decrementPurchaseCounter(
                 header.campaignId(), header.buyerId(), header.totalQuantity(), now)) {
             throw new IllegalStateException("구매 카운터 복구 불변식 위반: orderId=" + orderId);
+        }
+        for (OrderRepository.ExpiredReservation reservation : orderRepository.releaseReservations(orderId, now)) {
+            if (!orderRepository.restoreInventory(reservation.inventoryId(), reservation.quantity())) {
+                throw new IllegalStateException("취소 재고 복구 불변식 위반: inventoryId=" + reservation.inventoryId());
+            }
         }
         afterCommit(header.campaignId(), false);
         return toResponse(orderRepository.findOrder(orderId).orElseThrow());
@@ -186,7 +186,9 @@ public class OrderService {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "ORDER_QUANTITY_TOO_LARGE", "주문 수량 범위를 초과했습니다.");
             }
         }
-        return request.items();
+        return request.items().stream()
+                .sorted(Comparator.comparing(CreateOrderRequest.Item::productSkuId))
+                .toList();
     }
 
     private String validateIdempotencyKey(String key) {

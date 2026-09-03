@@ -43,7 +43,7 @@ public class HttpPgClient implements PgClient {
             return interpret(response);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode().is4xxClientError()) {
-                return ConfirmResult.failed("PG_REJECTED", exception.getStatusText());
+                return ConfirmResult.failed(null, "PG_REJECTED", exception.getStatusText());
             }
             log.warn("PG confirm이 5xx로 응답해 결과를 확정할 수 없습니다: {}", command.merchantPaymentId(), exception);
             return ConfirmResult.timeout("PG 5xx: " + exception.getStatusCode());
@@ -129,7 +129,8 @@ public class HttpPgClient implements PgClient {
         return switch (response.status()) {
             case "SUCCEEDED" -> ConfirmResult.succeeded(response.providerPaymentId(),
                     response.approvedAt() == null ? null : Instant.parse(response.approvedAt()));
-            case "FAILED", "DECLINED" -> ConfirmResult.failed("PG_DECLINED", response.failureReason());
+            case "FAILED", "DECLINED" -> ConfirmResult.failed(response.providerPaymentId(), "PG_DECLINED",
+                    response.failureReason());
             default -> ConfirmResult.timeout("해석할 수 없는 PG 상태: " + response.status());
         };
     }
