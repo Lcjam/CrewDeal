@@ -268,6 +268,16 @@ public class OrderRepository {
     }
 
     /** 취소 가능 여부 판정용. 결제가 PROCESSING·UNKNOWN이면 확정을 기다려야 한다 (REF-01). */
+    /**
+     * 취소 판정 전에 주문 행을 잠근다. 결제 준비({@code PaymentRepository.findOrderForPayment})도 같은
+     * 행을 잠그므로, 두 경로가 동시에 들어와도 나중 트랜잭션은 먼저 커밋된 결과를 보고 판단한다.
+     * 잠그지 않으면 각자 {@code orders}와 {@code payments}만 건드려 READ COMMITTED write skew로
+     * "CANCELLED 주문 + SUCCEEDED 결제"가 성립한다 (10.2에 그 조합의 환불 경로가 없다).
+     */
+    public void lockOrder(Long orderId) {
+        jdbc.queryForList("SELECT id FROM orders WHERE id = ? FOR UPDATE", orderId);
+    }
+
     public boolean hasUnsettledPayment(Long orderId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (

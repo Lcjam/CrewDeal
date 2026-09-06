@@ -4,6 +4,7 @@ import com.groupdrop.common.AuditLogRepository;
 import com.groupdrop.ledger.LedgerAccount;
 import com.groupdrop.ledger.LedgerService;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -24,6 +25,8 @@ public class SettlementPayoutService {
 
     private static final Logger log = LoggerFactory.getLogger(SettlementPayoutService.class);
     private static final String SOURCE = "settlement-payout";
+    /** 지급은 외부 호출 없는 내부 가상 실행이라 정상이면 1초를 넘지 않는다. 살아 있는 지급을 가로채는 쪽이 더 위험해 넉넉히 잡는다. */
+    private static final Duration STALE_PROCESSING_THRESHOLD = Duration.ofMinutes(5);
 
     private final SettlementRepository settlements;
     private final LedgerService ledger;
@@ -51,6 +54,7 @@ public class SettlementPayoutService {
      * @return 상태가 바뀐 배치 수
      */
     public int drain(int limit) {
+        sweepStaleProcessing();
         List<SettlementRepository.Batch> batches = settlements.findBatchesInStatus(
                 List.of(SettlementBatchStatus.PENDING, SettlementBatchStatus.READY), limit);
         int progressed = 0;
@@ -153,6 +157,24 @@ public class SettlementPayoutService {
             log.error("정산 배치 {} 지급에 실패했습니다.", batchId, exception);
             return recordFailure(batchId, "PAYOUT_ERROR", exception.toString());
         }
+    }
+
+    /**
+     * 선점 커밋 후 프로세스가 죽어 {@code PROCESSING}에 남은 배치를 {@code FAILED}로 회수한다 (10.5).
+     * 지급은 외부 호출 없는 내부 가상 실행이라 정상이면 1초를 넘지 않으므로, 임계는 넉넉히 5분으로 둔다 —
+     * 살아 있는 지급을 가로채면 안 되는 쪽이 더 위험하다.
+     */
+    void sweepStaleProcessing() {
+        transactions.executeWithoutResult(status -> {
+            Instant now = Instant.now(clock);
+            for (Long batchId : settlements.failStaleProcessing(now.minus(STALE_PROCESSING_THRESHOLD), now)) {
+                auditLogs.record(SOURCE, "SETTLEMENT_PAYOUT_STALE_RECOVERED", "SETTLEMENT_BATCH", batchId,
+                        "지급 실행이 %s를 넘겨 중단된 배치를 FAILED로 회수했습니다.".formatted(STALE_PROCESSING_THRESHOLD),
+                        now);
+                metrics.recordFailed();
+                log.warn("중단된 PROCESSING 정산 배치 {}를 FAILED로 회수했습니다.", batchId);
+            }
+        });
     }
 
     private Outcome completed(Long batchId) {

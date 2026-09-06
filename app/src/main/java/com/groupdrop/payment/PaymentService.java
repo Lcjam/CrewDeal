@@ -123,7 +123,13 @@ public class PaymentService {
         // 어긋나면 "attempt 있음 + READY" 고아가 스윕에도 대사에도 잡히지 않는다.
         Long attemptId = payments.insertAttempt(paymentId, merchantPaymentId, order.totalAmount(), now);
         if (!payments.markProcessing(paymentId, now)) {
-            throw new IllegalStateException("새로 만든 결제의 READY → PROCESSING 전이에 실패했습니다: " + paymentId);
+            // 결제 행을 만든 뒤 PG로 넘어가기 전에 주문이 취소된 경쟁이다 (10.2는 결제 READY 동안의
+            // 취소를 허용한다). 오류가 아니라 경쟁이므로 409로 돌려준다. 이 예외는 준비 트랜잭션을
+            // 롤백해 방금 만든 payments·payment_attempts 행을 함께 되돌리는데, PG 호출 전이라
+            // 외부에 남은 흔적이 없으므로 고아를 만들지 않는 쪽이 맞다 (PAY-01의 "attempt 있음 + READY"
+            // 고아는 PG 호출 이후에만 문제가 된다).
+            throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_PAYABLE",
+                    "결제를 시작하기 전에 주문이 결제 불가 상태가 되었습니다.");
         }
         return new Preparation(null, paymentId, attemptId, merchantPaymentId, order.totalAmount());
     }

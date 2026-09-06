@@ -26,6 +26,8 @@ class SettlementPayoutFailureTest extends AbstractPaymentIntegrationTest {
     @Autowired
     private SettlementFailureInjector failureInjector;
     @Autowired
+    private SettlementPayoutService payouts;
+    @Autowired
     private Clock clock;
 
     @AfterEach
@@ -132,6 +134,63 @@ class SettlementPayoutFailureTest extends AbstractPaymentIntegrationTest {
                 .isEqualTo(SettlementBatchStatus.PROCESSING);
 
         assertThat(settlements.markHeld(processingBatchId, "지급 중 개입 시도", now)).isFalse();
+    }
+
+    /**
+     * 선점({@code PROCESSING}) 커밋 이후·결과 기록 이전에 프로세스가 죽으면 배치가 PROCESSING에 남는다.
+     * {@code drain}은 PENDING·READY만 보고 {@code claimForProcessing}·{@code markHeld}는 PROCESSING을
+     * 받지 않으므로, 스윕이 없으면 회수 주체가 아무도 없다 (10.5의 {@code PROCESSING → FAILED}).
+     */
+    @Test
+    void 중단된_PROCESSING_배치는_스윕이_FAILED로_회수하고_재시도가_이어받는다() {
+        OrderFixture order = order(10, 1);
+        pay(order);
+        outboxWorker.drain();
+        closeCampaign(order.campaignId(), 8);
+        settlementService.run(ADMIN, order.campaignId());
+
+        SettlementRepository.Batch completed = batches(order.campaignId()).getFirst();
+        Instant now = Instant.now(clock);
+        Long stranded = settlements.insertBatch(order.campaignId(), completed.payeeType(),
+                completed.payeeId(), BatchType.RECOVERY, SettlementBatchStatus.PENDING, -1L, now, now);
+        assertThat(settlements.markReady(stranded, now)).isTrue();
+        assertThat(settlements.claimForProcessing(stranded, now)).isTrue();
+        // 프로세스가 죽은 상황을 임계 시간(5분) 밖의 updated_at으로 재현한다. Clock 빈이 시스템 시계라
+        // 시각을 되감을 수 없으므로 행을 과거로 밀어 둔다.
+        jdbc.update("UPDATE settlement_batches SET updated_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(now.minusSeconds(600)), stranded);
+
+        payouts.sweepStaleProcessing();
+
+        SettlementRepository.Batch recovered = settlements.findBatch(stranded).orElseThrow();
+        assertThat(recovered.status()).isEqualTo(SettlementBatchStatus.FAILED);
+        assertThat(recovered.failureCode()).isEqualTo("PAYOUT_STALE");
+        assertThat(count("audit_logs",
+                "action='SETTLEMENT_PAYOUT_STALE_RECOVERED' AND resource_id=" + stranded)).isEqualTo(1);
+        // FAILED로 돌아왔으므로 10.5의 재시도 경로(FAILED → PROCESSING)를 다시 탈 수 있다.
+        assertThat(settlements.claimForProcessing(stranded, Instant.now(clock))).isTrue();
+    }
+
+    /** 임계 시간 안에서 정상 지급 중인 배치는 스윕이 건드리지 않는다 — 살아 있는 지급을 가로채면 안 된다. */
+    @Test
+    void 임계_시간_안의_PROCESSING_배치는_스윕이_건드리지_않는다() {
+        OrderFixture order = order(10, 1);
+        pay(order);
+        outboxWorker.drain();
+        closeCampaign(order.campaignId(), 8);
+        settlementService.run(ADMIN, order.campaignId());
+
+        SettlementRepository.Batch completed = batches(order.campaignId()).getFirst();
+        Instant now = Instant.now(clock);
+        Long inFlight = settlements.insertBatch(order.campaignId(), completed.payeeType(),
+                completed.payeeId(), BatchType.RECOVERY, SettlementBatchStatus.PENDING, -1L, now, now);
+        settlements.markReady(inFlight, now);
+        assertThat(settlements.claimForProcessing(inFlight, now)).isTrue();
+
+        payouts.sweepStaleProcessing();
+
+        assertThat(settlements.findBatch(inFlight).orElseThrow().status())
+                .isEqualTo(SettlementBatchStatus.PROCESSING);
     }
 
     private java.util.List<SettlementRepository.Batch> batches(Long campaignId) {
