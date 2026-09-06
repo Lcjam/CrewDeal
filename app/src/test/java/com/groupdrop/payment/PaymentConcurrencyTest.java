@@ -132,6 +132,52 @@ class PaymentConcurrencyTest extends AbstractPaymentIntegrationTest {
                 + " AND status IN ('SUCCEEDED','REFUNDING','REFUNDED')")).isEqualTo(1);
     }
 
+    /**
+     * 10.2는 취소를 "결제 전 취소 (결제 READY/FAILED일 때만)"로 제한한다. 결제 준비가 주문 상태를
+     * 잠그지 않고 읽으면 상태 검사와 결제 행 생성 사이에 {@code cancelOrder}의 조건부 UPDATE가
+     * 커밋되어 "CANCELLED 주문 + 성공한 결제"가 만들어진다. 10.2에 {@code CANCELLED → REFUNDING}이
+     * 없어 그 조합에는 자동 환불 경로가 없으므로, 애초에 만들어지지 않아야 한다.
+     */
+    @Test
+    void 주문_취소와_결제_요청이_동시에_와도_취소된_주문에_성공_결제가_남지_않는다() throws Exception {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            OrderFixture order = order(10, 1);
+            pgClient.setDuringConfirm(() -> sleep(50));
+
+            List<String> results = runConcurrently(2, new java.util.concurrent.Callable<>() {
+                private final java.util.concurrent.atomic.AtomicBoolean first =
+                        new java.util.concurrent.atomic.AtomicBoolean(true);
+
+                @Override
+                public String call() {
+                    try {
+                        if (first.getAndSet(false)) {
+                            return "PAY:" + paymentService.requestPayment(BUYER, order.orderId(), key(),
+                                    new CreatePaymentRequest(order.totalAmount())).body().status();
+                        }
+                        return "CANCEL:" + orderService.cancelOrder(BUYER, order.orderId()).status();
+                    } catch (ApiException exception) {
+                        return exception.getCode();
+                    }
+                }
+            });
+
+            String orderStatus = jdbc.queryForObject(
+                    "SELECT status FROM orders WHERE id=?", String.class, order.orderId());
+            long settledPayments = count("payments",
+                    "order_id=" + order.orderId() + " AND status IN ('SUCCEEDED','REFUNDING','REFUNDED')");
+            if ("CANCELLED".equals(orderStatus)) {
+                assertThat(settledPayments)
+                        .as("취소된 주문 %d에 확정 결제가 남았습니다 (results=%s)", order.orderId(), results)
+                        .isZero();
+            } else {
+                // 결제가 이겼다면 주문은 결제 진행 중이어야 하고, 취소는 409로 거부됐어야 한다.
+                assertThat(results).anySatisfy(result -> assertThat(result)
+                        .isIn("PAYMENT_NOT_SETTLED", "ORDER_NOT_CANCELLABLE"));
+            }
+        }
+    }
+
     private List<String> runConcurrently(int threads, java.util.concurrent.Callable<String> task) throws Exception {
         CountDownLatch ready = new CountDownLatch(threads);
         CountDownLatch start = new CountDownLatch(1);

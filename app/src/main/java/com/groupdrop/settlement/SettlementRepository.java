@@ -227,6 +227,24 @@ public class SettlementRepository {
                 """, ts(now), batchId) == 1;
     }
 
+    /**
+     * 10.5의 {@code PROCESSING → FAILED}를 스윕으로 적용한다. 선점 커밋 이후·결과 기록 이전에
+     * 프로세스가 죽으면 배치가 {@code PROCESSING}에 남는데, {@code drain}은 PENDING·READY만 보고
+     * {@code claimForProcessing}·{@code markHeld}는 PROCESSING을 받지 않아 회수 주체가 없다.
+     * FAILED로 돌려놓으면 기존 재시도 경로가 그대로 이어받는다
+     * ({@code ReconciliationRepository.failStaleRuns}, 고아 결제 스윕과 같은 패턴).
+     */
+    public List<Long> failStaleProcessing(Instant staleBefore, Instant now) {
+        return jdbc.query("""
+                UPDATE settlement_batches
+                   SET status = 'FAILED', failure_code = 'PAYOUT_STALE',
+                       failure_reason = '지급 실행이 임계 시간을 넘겨 중단된 PROCESSING 배치를 자동 회수했습니다.',
+                       updated_at = ?
+                 WHERE status = 'PROCESSING' AND updated_at <= ?
+                RETURNING id
+                """, (rs, rowNum) -> rs.getLong("id"), ts(now), ts(staleBefore));
+    }
+
     public boolean markCompleted(Long batchId, Instant now) {
         return jdbc.update("""
                 UPDATE settlement_batches

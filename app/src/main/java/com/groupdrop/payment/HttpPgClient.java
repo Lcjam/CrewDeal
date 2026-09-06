@@ -42,6 +42,11 @@ public class HttpPgClient implements PgClient {
                     .body(ConfirmApiResponse.class);
             return interpret(response);
         } catch (RestClientResponseException exception) {
+            if (isInconclusive(exception)) {
+                log.warn("PG confirm이 {}로 응답해 결과를 확정할 수 없습니다: {}",
+                        exception.getStatusCode(), command.merchantPaymentId());
+                return ConfirmResult.timeout("PG " + exception.getStatusCode());
+            }
             if (exception.getStatusCode().is4xxClientError()) {
                 return ConfirmResult.failed(null, "PG_REJECTED", exception.getStatusText());
             }
@@ -64,6 +69,11 @@ public class HttpPgClient implements PgClient {
                     .body(RefundApiResponse.class);
             return interpret(response);
         } catch (RestClientResponseException exception) {
+            if (isInconclusive(exception)) {
+                log.warn("PG 환불이 {}로 응답해 결과를 확정할 수 없습니다: {}",
+                        exception.getStatusCode(), command.providerPaymentId());
+                return RefundResult.timeout("PG " + exception.getStatusCode());
+            }
             if (exception.getStatusCode().is4xxClientError()) {
                 // 4xx는 PG가 환불을 명시적으로 거부한 것이다 (없는 결제, 환불 불가 상태 등).
                 return RefundResult.failed("PG_REFUND_REJECTED", exception.getStatusText());
@@ -133,6 +143,16 @@ public class HttpPgClient implements PgClient {
                     response.failureReason());
             default -> ConfirmResult.timeout("해석할 수 없는 PG 상태: " + response.status());
         };
+    }
+
+    /**
+     * 4xx라고 전부 "PG가 거절했다"로 읽을 수 없다. 408·425·429는 프록시·게이트웨이·PG의 부하 제어가
+     * 내는 응답이라 요청이 PG 코어에 도달했는지 알 수 없다 — ADR-002가 "연결이 거부됐으니 PG에 안
+     * 갔을 것"이라는 추론을 금지한 것과 같은 이유로 UNKNOWN(타임아웃)으로 접는다.
+     */
+    private boolean isInconclusive(RestClientResponseException exception) {
+        int status = exception.getStatusCode().value();
+        return status == 408 || status == 425 || status == 429;
     }
 
     private record TransactionsApiResponse(Integer count, List<TransactionApiItem> transactions) { }

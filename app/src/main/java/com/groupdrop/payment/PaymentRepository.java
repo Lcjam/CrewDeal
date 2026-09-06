@@ -23,10 +23,23 @@ public class PaymentRepository {
         this.jdbc = jdbc;
     }
 
+    /**
+     * 결제 준비용 주문 조회. {@code FOR UPDATE}로 주문 행을 잠근다 — 10.2가 결제 {@code READY} 동안의
+     * 주문 취소를 허용하므로 결제 준비와 취소가 같은 주문에서 만난다. 두 트랜잭션이 서로 다른 행
+     * ({@code payments} / {@code orders})만 건드리면 READ COMMITTED에서 write skew가 성립해
+     * "CANCELLED 주문 + SUCCEEDED 결제"가 만들어진다. {@code cancelOrder}도 같은 행을 잠그므로
+     * (`OrderRepository.lockOrder`) 둘 중 하나는 반드시 상대의 결과를 보고 판단하게 된다.
+     *
+     * <p>취소 쪽의 조건부 UPDATE만으로는 부족하다: PostgreSQL의 EvalPlanQual은 행 잠금 해제 후
+     * WHERE를 재평가할 때 서브쿼리를 원래 스냅숏으로 평가해, 방금 커밋된 결제를 보지 못한다.
+     *
+     * <p>락 순서는 캠페인 → 주문이다. 호출자가 {@code CampaignTransactionBarrier}로 캠페인 행을 먼저
+     * 잠그고, {@code cancelOrder}는 캠페인 행을 잠그지 않으므로 순환은 생기지 않는다.
+     */
     public Optional<OrderForPayment> findOrderForPayment(Long orderId) {
         return jdbc.query("""
                 SELECT id, buyer_id, status, total_amount, expires_at
-                  FROM orders WHERE id = ?
+                  FROM orders WHERE id = ? FOR UPDATE
                 """, (rs, rowNum) -> new OrderForPayment(rs.getLong("id"), rs.getLong("buyer_id"),
                 rs.getString("status"), rs.getLong("total_amount"), rs.getTimestamp("expires_at").toInstant()),
                 orderId).stream().findFirst();
@@ -68,10 +81,22 @@ public class PaymentRepository {
                 """, outcome, truncate(errorDetail, 500), ts(now), attemptId);
     }
 
+    /**
+     * {@code READY → PROCESSING} (10.3). 주문이 아직 {@code PENDING_PAYMENT}인지 같은 문장에서 확인한다 —
+     * 10.2가 취소를 "결제 READY/FAILED일 때만"으로 허용하므로, 결제가 READY로 대기하는 동안 주문이
+     * 정당하게 취소될 수 있다. 그때 PG 호출로 넘어가면 "CANCELLED 주문 + SUCCEEDED 결제"가 되는데
+     * 10.2에 {@code CANCELLED → REFUNDING}이 없어 자동 환불 경로가 없다.
+     *
+     * <p>전이에 실패한 결제는 READY로 남아 고아 스윕이 임계 경과 후 FAILED로 정리한다 (PAY-03).
+     */
     public boolean markProcessing(Long paymentId, Instant now) {
         return jdbc.update("""
                 UPDATE payments SET status = 'PROCESSING', updated_at = ?
                  WHERE id = ? AND status = 'READY'
+                   AND EXISTS (
+                       SELECT 1 FROM orders o
+                        WHERE o.id = payments.order_id AND o.status = 'PENDING_PAYMENT'
+                   )
                 """, ts(now), paymentId) == 1;
     }
 
