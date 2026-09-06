@@ -22,6 +22,10 @@ public class PaymentMetrics {
     private final Counter webhookRejected;
     private final Counter orphanSwept;
     private final Counter superseded;
+    private final Counter attempts;
+    private final Counter unknown;
+    private final Counter duplicatePrevented;
+    private final Counter webhookDuplicate;
 
     public PaymentMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -29,6 +33,12 @@ public class PaymentMetrics {
         this.webhookRejected = registry.counter("payment.webhook.rejected");
         this.orphanSwept = registry.counter("payment.orphan.swept");
         this.superseded = registry.counter("payment.superseded");
+        // 16.4가 이름을 고정한 지표는 사건이 한 번도 없어도 노출돼야 한다. 첫 사용 시점에 등록하면
+        // 갓 기동한 인스턴스에서 지표 자체가 없어, 대시보드·경보가 "지표 없음"과 "값 0"을 구분하지 못한다.
+        this.attempts = registry.counter("payment.attempt");
+        this.unknown = registry.counter("payment.unknown", "source", "request");
+        this.duplicatePrevented = registry.counter("payment.duplicate.prevented");
+        this.webhookDuplicate = registry.counter("webhook.duplicate");
     }
 
     public void recordSucceeded(String source) {
@@ -41,22 +51,22 @@ public class PaymentMetrics {
     }
 
     public void recordUnknown() {
-        counter("payment.unknown", "source", "request").increment();
+        unknown.increment();
     }
 
     /** 16.4: 실제 PG confirm 호출 직전에만 센다. 재생 응답은 외부 호출이 아니므로 제외한다. */
     public void recordAttempt() {
-        registry.counter("payment.attempt").increment();
+        attempts.increment();
     }
 
     /** 16.4: 기존 멱등 키를 다시 받은 모든 경로(재생·충돌)를 관측한다. */
     public void recordDuplicatePrevented() {
-        registry.counter("payment.duplicate.prevented").increment();
+        duplicatePrevented.increment();
     }
 
     /** 16.4: Inbox UNIQUE가 이미 수신한 웹훅을 막은 경우다. */
     public void recordWebhookDuplicate() {
-        registry.counter("webhook.duplicate").increment();
+        webhookDuplicate.increment();
     }
 
     public void recordWebhookRejected() {

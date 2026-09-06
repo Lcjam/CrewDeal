@@ -35,6 +35,12 @@ public class ReconciliationMetrics {
         // ledger_unbalanced_total로 노출된다 (16.4).
         this.ledgerUnbalanced = registry.counter("ledger.unbalanced");
         registry.gauge("reconciliation.open", openDiscrepancies, AtomicLong::get);
+        // 16.4가 고정한 지표는 불일치가 한 번도 없어도 노출돼야 한다. 지연 등록으로 두면
+        // 정상 운영 중인 앱에서 reconciliation_mismatch_total 자체가 사라져, 대시보드·경보가
+        // "지표 없음"과 "불일치 0"을 구분하지 못한다.
+        for (DiscrepancyType type : DiscrepancyType.values()) {
+            counters.put(type.name(), registry.counter("reconciliation.mismatch", "type", type.name()));
+        }
     }
 
     public void recordRun() {
