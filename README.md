@@ -29,7 +29,11 @@ docker compose ps
 - 운영 화면: `http://localhost:8080/admin/index.html`
 - 가상 PG: `http://localhost:8081`
 - Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000`
+- Grafana: `http://localhost:3000` (admin/admin, 대시보드 `GroupDrop Core` → `/d/groupdrop-core`)
+
+Grafana 데이터소스와 대시보드는 `ops/grafana/` 에서 provisioning되므로 별도 설정 없이 바로 뜹니다.
+재고·결제·Outbox/Inbox·정합성 4개 행 25패널이며, 캡처는
+[`docs/reports/evidence/`](docs/reports/evidence/) 의 `2026-09-06-grafana-core-1.png`·`-2.png` 입니다.
 
 종료는 `docker compose down`으로 합니다. 볼륨까지 지우려면 데이터가 삭제되므로 범위를 확인한 뒤 `docker compose down -v`를 사용합니다.
 
@@ -39,14 +43,19 @@ docker compose ps
 cd app && ./gradlew cleanTest test
 cd ../mock-pg && ./gradlew cleanTest test
 
-# 2개 앱 인스턴스 S1-b (Compose 기동 후 실행)
+# 2개 앱 인스턴스 S1-b
+# 기본 스택에는 app2가 없다. 전용 포트로 2인스턴스 스택을 따로 띄운 뒤 실행한다.
+APP_PORT=58102 APP2_PORT=58103 MOCK_PG_PORT=58101 POSTGRES_PORT=55435 \
+  docker compose -p groupdrop-week6-s1b \
+  -f docker-compose.yml -f docker-compose.two-instances.yml \
+  up -d --build postgres mock-pg app app2
 cd ../load-test && ./scripts/run-s1-b.sh
 
 # docker kill 뒤 UNKNOWN·Outbox/Inbox 복구 실증
 cd ../load-test && ./scripts/run-compose-kill-recovery.sh
 ```
 
-S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 최종 회귀에서는 app 148건과 mock-pg 24건, 총 172건이 통과했습니다.
+S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 최종 회귀에서는 app 157건과 mock-pg 24건, 총 181건이 통과했습니다.
 
 ## 성공 기준과 문서
 
