@@ -5,4 +5,5 @@ scrape_configs:
   - job_name: groupdrop-app
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["app:8080"]
+      # app2는 2인스턴스 구성에서만 기동되며, 기본 스택에서는 down으로 표시될 뿐 동작에 영향 없음
+      - targets: ["app:8080", "app2:8080"]
