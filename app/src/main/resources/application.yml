@@ -19,6 +19,13 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  metrics:
+    distribution:
+      # Grafana p95 패널이 histogram_quantile을 쓰므로 _bucket 시계열이 필요하다.
+      percentiles-histogram:
+        inventory.update.duration: true
+        payment.pg.confirm.duration: true
+        refund.pg.duration: true
 
 groupdrop:
   time-zone: Asia/Seoul
