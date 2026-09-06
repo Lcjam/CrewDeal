@@ -130,6 +130,9 @@ public class OrderService {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_CANCELLABLE",
                     "결제 완료 전 주문만 취소할 수 있습니다. 현재 상태: " + status);
         }
+        // 결제 준비와 같은 주문 행에서 충돌시킨다 — 이 락이 없으면 아래 조건부 UPDATE의 NOT EXISTS가
+        // 동시에 진행 중인 결제를 보지 못한 채 취소를 성립시킨다 (OrderRepository.lockOrder 주석).
+        orderRepository.lockOrder(orderId);
         if (orderRepository.hasUnsettledPayment(orderId)) {
             throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
                     "확정되지 않은 결제가 있어 취소할 수 없습니다. 결제 확정 후 다시 시도하세요.");
