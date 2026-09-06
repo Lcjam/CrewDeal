@@ -78,11 +78,23 @@ run_app_test() {
   (cd "${APP_DIR}" && ./gradlew --rerun-tasks test "$@")
 }
 
+# 증거 파일의 source_commit이 실제로 실행된 코드를 가리켜야 한다. 워킹트리가 dirty면 HEAD는
+# 거짓말이 되므로, 게이트를 시작하기 전에 한 번만 확인한다 (ALLOW_DIRTY=1로 의도적 우회 가능).
+require_clean_worktree() {
+  if [[ "${ALLOW_DIRTY:-0}" == "1" ]]; then
+    echo "경고: ALLOW_DIRTY=1 — 증거의 source_commit이 실행된 코드와 다를 수 있습니다." >&2
+    return 0
+  fi
+  git -C "${PROJECT_DIR}" diff --quiet && git -C "${PROJECT_DIR}" diff --cached --quiet \
+    || fail "워킹트리가 dirty입니다. 커밋 후 실행하거나 ALLOW_DIRTY=1로 명시하세요."
+}
+
 record_stage() {
   local label="$1" evidence="${EVIDENCE_DIR}/${RUN_DATE}-${1}.txt"; shift
   mkdir -p "${EVIDENCE_DIR}"
   {
-    echo "source_commit=$(git -C "${PROJECT_DIR}" rev-parse HEAD)"
+    echo "source_commit=$(git -C "${PROJECT_DIR}" rev-parse HEAD)$(
+      git -C "${PROJECT_DIR}" diff --quiet && git -C "${PROJECT_DIR}" diff --cached --quiet || echo '-dirty')"
     echo "stage=${label}"
     "$@"
   } > >(tee "${evidence}") 2>&1
@@ -115,6 +127,8 @@ run_settlement_e2e() {
     DB_CONTAINER=groupdrop-week6-settlement-postgres-1 "${SCRIPT_DIR}/run-settlement-e2e.sh"
   stop_active_stack
 }
+
+require_clean_worktree
 
 echo '== S1-a: 단일 인스턴스 재고 100 / 주문 1,000 =='
 record_stage s1-a run_s1a
