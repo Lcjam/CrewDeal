@@ -1,8 +1,9 @@
 # 장애 주입 테스트 보고서
 
 - 기준: 기획서 v1.10 17.4, PAY-03·PAY-04, REF-02, SET-02·03
-- 작성일: 2026-09-03
-- 실행 소스: 기준 커밋 `cbf48f4ee4c0d4dfc4e2ec2b00d292d706f36d8a`
+- 작성일: 2026-09-06
+- 자동 회귀 실행 소스: HEAD `85fed5828172b899463444ca8f92f8d16f69d809`
+- 외부 실증 실행 소스: 기준 커밋 `510434d83686166ce5eb3bc2bcf60af91efbca92`
 - 판정: **PASS**
 
 ## 주입 지점과 기대 결과
@@ -31,10 +32,10 @@ cd load-test
 
 | 검증 | 결과 |
 |---|---|
-| 전체 자동 회귀 | PASS — app `cleanTest test` 157 tests, mock-pg `--rerun-tasks test` 24 tests; 실패·오류·스킵 0 |
+| 전체 자동 회귀 | PASS — app `cleanTest test` 164 tests, mock-pg `cleanTest test` 24 tests; 실패·오류·스킵 0 |
 | 최신 `docker kill` 실증 | PASS — UNKNOWN 20 → `SUCCEEDED` 20 / `PAID` 20; Outbox app/app2 9/11(총 20=PROCESSED 20), Inbox 9/11(총 20), 모든 SQL 위반 0, `recovery_assertion=1` |
 | 장애 주입 전체 회귀 판정 | PASS — release gate 전체 PASS |
 
 실증은 campaign 1에서 수행했다. 정산 지급 실패 주입의 한계는 위 표처럼 유지하며, 이 보고서는 실제 `docker kill` 복구와 종료 SQL 결과를 근거로 한다.
 
-원본 실행 로그: [전체 앱 회귀](evidence/2026-09-03-full-app-regression.txt), [docker-kill 복구](evidence/2026-09-03-compose-kill-recovery.txt), [환불 E2E](evidence/2026-09-03-refund-e2e.txt).
+원본 실행 로그: 2026-09-06 전체 자동 회귀 직접 재실행; [mock-pg](evidence/2026-09-06-mock-pg.txt), [docker-kill 복구](evidence/2026-09-06-compose-kill-recovery.txt), [환불 E2E](evidence/2026-09-06-refund-e2e.txt).

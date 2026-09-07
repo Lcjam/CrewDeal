@@ -55,7 +55,7 @@ cd ../load-test && ./scripts/run-s1-b.sh
 cd ../load-test && ./scripts/run-compose-kill-recovery.sh
 ```
 
-S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 최종 회귀에서는 app 157건과 mock-pg 24건, 총 181건이 통과했습니다.
+S1-b는 k6 `200 VU × 5회 = 1,000` 주문 시도를 두 앱에 500회씩 고정 배정하고, 종료 뒤 재고·예약 SQL 불변식을 검증합니다. 최종 회귀에서는 app 164건과 mock-pg 24건, 총 188건이 통과했습니다.
 
 ## 성공 기준과 문서
 
