@@ -1,8 +1,8 @@
 # 부하 테스트 보고서
 
 - 기준: 기획서 v1.10 S1-a/b, 17.3, 17.5
-- 작성일: 2026-09-03
-- 실행 소스: 기준 커밋 `cbf48f4ee4c0d4dfc4e2ec2b00d292d706f36d8a`
+- 작성일: 2026-09-06
+- 실행 소스: 기준 커밋 `510434d83686166ce5eb3bc2bcf60af91efbca92`
 - 판정: **PASS**
 
 ## 고정 부하 정의
@@ -56,9 +56,9 @@ psql -h localhost -p 55435 -U groupdrop -d groupdrop \
 | 실행 | 상태 | 결과 |
 |---|---|---|
 | 과거 2~3주차 S1-a | 참고 | 당시 체크포인트에 별도 기록됨; 아래 최종 실행 결과와 구분 |
-| 현재 최종 S1-a | PASS | campaign 1; attempts 1,000, 성공 100, 품절 900, 5xx 0%, p50/p95/p99 `92.00/452.71/559.75ms`; inventory/reservation/purchase-counter 위반 0, `available/reserved/sold=0/100/0` |
-| 현재 최종 S1-b | PASS | campaign 1; attempts 1,000, app1/app2 500/500, 성공 100, 품절 900, 5xx 0%, p50/p95/p99 `190.28/837.41/1,150ms`; inventory/reservation/purchase-counter 위반 0, `available/reserved/sold=0/100/0` |
+| 현재 최종 S1-a | PASS | campaign 1; attempts 1,000, 성공 100, 품절 900, 5xx 0%, `iteration_duration` p50/p95/p99 `116.27/455.80/588.78ms`; inventory/reservation/purchase-counter 위반 0, `available/reserved/sold=0/100/0` |
+| 현재 최종 S1-b | PASS | campaign 1; attempts 1,000, app1/app2 500/500, 성공 100, 품절 900, 5xx 0%, `iteration_duration` p50/p95/p99 `234.72/592.80/887.41ms`; inventory/reservation/purchase-counter 위반 0, `available/reserved/sold=0/100/0` |
 
 두 실행 모두 고정 부하 정의와 SQL 정합성 판정을 만족했다. 지연 수치는 동일 로컬 머신에서 측정한 참고값이며, S1의 주된 성공 근거는 성공 주문 정확히 100건과 불변식 위반 0건이다.
 
-원본 실행 로그: [S1-a](evidence/2026-09-03-s1-a.txt), [S1-b](evidence/2026-09-03-s1-b.txt).
+원본 실행 로그: [S1-a](evidence/2026-09-06-s1-a.txt), [S1-b](evidence/2026-09-06-s1-b.txt).
