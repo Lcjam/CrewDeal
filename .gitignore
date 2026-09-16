@@ -9,9 +9,10 @@
 *.md
 !/README.md
 !/docs/
-!/docs/reports/
-!/docs/reports/evidence/
-!/docs/reports/evidence/*.txt
+!/docs/05-검증-보고서/
+!/docs/05-검증-보고서/*.md
+!/docs/05-검증-보고서/증거/
+!/docs/05-검증-보고서/증거/*.txt
 
 # Gradle / Java
 .gradle/
