@@ -9,7 +9,7 @@ PROJECT_DIR="$(cd "${LOAD_TEST_DIR}/.." && pwd)"
 APP_DIR="${PROJECT_DIR}/app"
 MOCK_PG_DIR="${PROJECT_DIR}/mock-pg"
 ACTIVE_PROJECT=''
-EVIDENCE_DIR="${PROJECT_DIR}/docs/reports/evidence"
+EVIDENCE_DIR="${PROJECT_DIR}/docs/05-검증-보고서/증거"
 RUN_DATE="${RUN_DATE:-$(date -u +%F)}"
 
 cleanup() {
