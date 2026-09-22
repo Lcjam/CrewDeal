@@ -36,6 +36,30 @@ public class ReconciliationController {
         return ResponseEntity.ok(ops.findRun(authentication.getName(), runId));
     }
 
+    @GetMapping("/api/admin/reconciliations")
+    public ResponseEntity<List<ReconciliationRepository.Run>> runs(Authentication authentication) {
+        return ResponseEntity.ok(ops.runs(authentication.getName()));
+    }
+
+    @GetMapping("/api/admin/payments")
+    public ResponseEntity<List<com.groupdrop.payment.PaymentRepository.AdminPayment>> payments(
+            Authentication authentication, @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long campaignId) {
+        return ResponseEntity.ok(ops.payments(authentication.getName(), status, campaignId));
+    }
+
+    @GetMapping("/api/admin/outbox-events")
+    public ResponseEntity<List<com.groupdrop.outbox.OutboxRepository.Event>> outboxEvents(
+            Authentication authentication, @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(ops.outboxEvents(authentication.getName(), status));
+    }
+
+    @GetMapping("/api/admin/inbox-events")
+    public ResponseEntity<List<com.groupdrop.outbox.InboxRepository.Event>> inboxEvents(
+            Authentication authentication, @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(ops.inboxEvents(authentication.getName(), status));
+    }
+
     @GetMapping("/api/admin/reconciliation-discrepancies")
     public ResponseEntity<List<ReconciliationRepository.Discrepancy>> discrepancies(
             Authentication authentication, @RequestParam(required = false) String status) {

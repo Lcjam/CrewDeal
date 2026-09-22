@@ -7,6 +7,7 @@ import com.groupdrop.order.OrderService;
 import com.groupdrop.outbox.InboxWorker;
 import com.groupdrop.outbox.OutboxWorker;
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -16,7 +17,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * 결제 통합 테스트 공통 기반. 모든 스케줄러를 사실상 정지시키고 워커를 직접 호출하는 이유는
@@ -62,6 +65,8 @@ public abstract class AbstractPaymentIntegrationTest {
     protected MockMvc mockMvc;
     @Autowired
     protected JdbcTemplate jdbc;
+    @Autowired
+    protected Clock clock;
 
     /**
      * 테스트들이 같은 DB를 공유하므로, 앞선 테스트가 남긴 미처리 이벤트를 먼저 비운다.
@@ -129,6 +134,16 @@ public abstract class AbstractPaymentIntegrationTest {
 
     protected String key() {
         return UUID.randomUUID().toString();
+    }
+
+    protected MockHttpSession loginSession(String email) throws Exception {
+        MvcResult result = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/auth/login")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\",\"password\":\"groupdrop123!\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andReturn();
+        return (MockHttpSession) result.getRequest().getSession(false);
     }
 
     protected String paymentStatus(Long paymentId) {

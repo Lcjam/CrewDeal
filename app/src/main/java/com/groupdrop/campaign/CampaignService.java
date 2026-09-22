@@ -1,6 +1,7 @@
 package com.groupdrop.campaign;
 
 import com.groupdrop.common.ApiException;
+import com.groupdrop.common.StatusFilter;
 import com.groupdrop.product.Product;
 import com.groupdrop.product.ProductRepository;
 import com.groupdrop.product.ProductSku;
@@ -48,6 +49,7 @@ public class CampaignService {
     private final CampaignPolicyVersionRepository campaignPolicyVersionRepository;
     private final CampaignPolicyVersionItemRepository campaignPolicyVersionItemRepository;
     private final CampaignPurchaseCounterReader campaignPurchaseCounterReader;
+    private final CampaignListRepository campaignLists;
     private final Clock clock;
 
     public CampaignService(UserRepository userRepository,
@@ -61,6 +63,7 @@ public class CampaignService {
                             CampaignPolicyVersionRepository campaignPolicyVersionRepository,
                             CampaignPolicyVersionItemRepository campaignPolicyVersionItemRepository,
                             CampaignPurchaseCounterReader campaignPurchaseCounterReader,
+                            CampaignListRepository campaignLists,
                             Clock clock) {
         this.userRepository = userRepository;
         this.influencerRepository = influencerRepository;
@@ -73,6 +76,7 @@ public class CampaignService {
         this.campaignPolicyVersionRepository = campaignPolicyVersionRepository;
         this.campaignPolicyVersionItemRepository = campaignPolicyVersionItemRepository;
         this.campaignPurchaseCounterReader = campaignPurchaseCounterReader;
+        this.campaignLists = campaignLists;
         this.clock = clock;
     }
 
@@ -239,6 +243,66 @@ public class CampaignService {
                 remainingPurchaseQuantity, skuStatuses);
     }
 
+    @Transactional(readOnly = true)
+    public List<PublicCampaignListResponse> publicCampaigns(String status) {
+        List<CampaignStatus> statuses = statuses(status,
+                Set.of(CampaignStatus.SCHEDULED, CampaignStatus.OPEN, CampaignStatus.SOLD_OUT, CampaignStatus.CLOSED),
+                List.of(CampaignStatus.SCHEDULED, CampaignStatus.OPEN, CampaignStatus.SOLD_OUT));
+        return group(campaignLists.find(statuses, null, null)).stream().map(this::publicResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CampaignListResponse> myInfluencerCampaigns(String requesterEmail) {
+        User user = requireRole(requesterEmail, UserRole.INFLUENCER);
+        Long influencerId = influencerRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INFLUENCER_NOT_FOUND", "인플루언서 정보를 찾을 수 없습니다."))
+                .getId();
+        return group(campaignLists.find(List.of(CampaignStatus.values()), influencerId, null));
+    }
+
+    @Transactional(readOnly = true)
+    public List<CampaignListResponse> mySupplierCampaigns(String requesterEmail) {
+        User user = requireRole(requesterEmail, UserRole.SUPPLIER);
+        Long supplierId = supplierRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SUPPLIER_NOT_FOUND", "공급사 정보를 찾을 수 없습니다."))
+                .getId();
+        return group(campaignLists.find(List.of(CampaignStatus.values()), null, supplierId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<CampaignListResponse> adminCampaigns(String requesterEmail, String status) {
+        requireRole(requesterEmail, UserRole.ADMIN);
+        return group(campaignLists.find(statuses(status, Set.of(CampaignStatus.values()), List.of(CampaignStatus.values())), null, null));
+    }
+
+    private List<CampaignStatus> statuses(String value, Set<CampaignStatus> allowed, List<CampaignStatus> defaults) {
+        return StatusFilter.parse(value, allowed.stream().map(Enum::name).collect(java.util.stream.Collectors.toSet()),
+                defaults.stream().map(Enum::name).toList()).stream().map(CampaignStatus::valueOf).toList();
+    }
+
+    private List<CampaignListResponse> group(List<CampaignListRepository.Row> rows) {
+        Map<Long, List<CampaignListRepository.Row>> byCampaign = new java.util.LinkedHashMap<>();
+        for (CampaignListRepository.Row row : rows) {
+            byCampaign.computeIfAbsent(row.id(), ignored -> new ArrayList<>()).add(row);
+        }
+        return byCampaign.values().stream().map(sameCampaign -> {
+            CampaignListRepository.Row first = sameCampaign.getFirst();
+            List<CampaignListResponse.Sku> skus = sameCampaign.stream().filter(row -> row.productSkuId() != null)
+                    .map(row -> new CampaignListResponse.Sku(row.productSkuId(), row.optionName(), row.availableQuantity())).toList();
+            return new CampaignListResponse(first.id(), first.name(), first.slug(), first.status(), first.supplierId(),
+                    first.supplierName(), first.productId(), first.productName(), first.dealPrice(), first.startsAt(),
+                    first.endsAt(), first.perUserPurchaseLimit(), first.commissionRateBp(), first.rejectionReason(), skus);
+        }).toList();
+    }
+
+    private PublicCampaignListResponse publicResponse(CampaignListResponse response) {
+        return new PublicCampaignListResponse(response.id(), response.name(), response.slug(), response.status(),
+                response.supplierId(), response.supplierName(), response.productId(), response.productName(),
+                response.dealPrice(), response.startsAt(), response.endsAt(), response.perUserPurchaseLimit(),
+                response.skus().stream().map(sku -> new PublicCampaignListResponse.Sku(
+                        sku.productSkuId(), sku.optionName(), sku.availableQuantity())).toList());
+    }
+
     private void applyTransition(Long campaignId, CampaignStatus from, CampaignStatus to) {
         Instant now = Instant.now(clock);
         int updated = campaignRepository.transitionStatus(campaignId, from, to, now);
@@ -259,6 +323,14 @@ public class CampaignService {
     private User requireUser(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND", "사용자를 찾을 수 없습니다."));
+    }
+
+    private User requireRole(String email, UserRole role) {
+        User user = requireUser(email);
+        if (user.getRole() != role) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "이 조회를 수행할 권한이 없습니다.");
+        }
+        return user;
     }
 
     private Campaign requireCampaign(Long campaignId) {

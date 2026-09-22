@@ -1,6 +1,7 @@
 package com.groupdrop.settlement;
 
 import com.groupdrop.common.ApiException;
+import com.groupdrop.common.StatusFilter;
 import com.groupdrop.user.InfluencerRepository;
 import com.groupdrop.user.SupplierRepository;
 import com.groupdrop.user.User;
@@ -8,6 +9,7 @@ import com.groupdrop.user.UserRepository;
 import com.groupdrop.user.UserRole;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class SettlementService {
+
+    private static final int LIST_LIMIT = 100;
+    private static final Set<String> BATCH_STATUSES = Set.of("PENDING", "READY", "PROCESSING", "COMPLETED",
+            "FAILED", "HELD");
 
     private final SettlementRepository settlements;
     private final SettlementDeterminationService determination;
@@ -55,6 +61,15 @@ public class SettlementService {
         payouts.updateBlockedGauges();
         return new RunResult(campaignId, result.outcome().name(), result.reason(),
                 settlements.findBatchesOfCampaign(campaignId).stream().map(SettlementBatchResponse::from).toList());
+    }
+
+    /** 운영자 콘솔 목록. 상태 필터와 표시용 캠페인명만 추가하고 배치 상태는 변경하지 않는다. */
+    @Transactional(readOnly = true)
+    public List<AdminSettlementResponse> adminBatches(String requesterEmail, Long campaignId, String status) {
+        requireAdmin(requesterEmail);
+        List<String> statuses = StatusFilter.parse(status, BATCH_STATUSES, List.copyOf(BATCH_STATUSES));
+        return settlements.findAdminBatches(campaignId, statuses, LIST_LIMIT).stream()
+                .map(item -> AdminSettlementResponse.from(item.batch(), item.campaignName())).toList();
     }
 
     @Transactional(readOnly = true)
@@ -162,6 +177,19 @@ public class SettlementService {
                     batch.payeeId(), batch.batchType().name(), batch.status().name(), batch.totalAmount(),
                     batch.determinedAt(), batch.attempts(), batch.failureCode(), batch.failureReason(),
                     batch.holdReason(), batch.completedAt());
+        }
+    }
+
+    public record AdminSettlementResponse(Long id, Long campaignId, String campaignName, String payeeType,
+                                          Long payeeId, String batchType, String status, long totalAmount,
+                                          Instant determinedAt, int attempts, String failureCode,
+                                          String failureReason, String holdReason, Instant completedAt) {
+
+        static AdminSettlementResponse from(SettlementRepository.Batch batch, String campaignName) {
+            return new AdminSettlementResponse(batch.id(), batch.campaignId(), campaignName,
+                    batch.payeeType().name(), batch.payeeId(), batch.batchType().name(), batch.status().name(),
+                    batch.totalAmount(), batch.determinedAt(), batch.attempts(), batch.failureCode(),
+                    batch.failureReason(), batch.holdReason(), batch.completedAt());
         }
     }
 

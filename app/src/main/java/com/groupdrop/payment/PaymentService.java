@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class PaymentService {
 
     private static final String SOURCE = "request";
+    private static final int DEFAULT_LIST_LIMIT = 100;
 
     private final UserRepository users;
     private final CampaignTransactionBarrier campaignBarrier;
@@ -205,6 +207,21 @@ public class PaymentService {
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_NOT_OWNER", "본인 결제만 조회할 수 있습니다.");
         }
         return PaymentResponse.from(payment);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> listOrderPayments(String requesterEmail, Long orderId) {
+        User requester = users.findByEmail(requesterEmail).orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED,
+                "AUTH_USER_NOT_FOUND", "사용자를 찾을 수 없습니다."));
+        if (requester.getRole() != UserRole.BUYER && requester.getRole() != UserRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "구매자 또는 운영자만 조회할 수 있습니다.");
+        }
+        PaymentRepository.OrderForPayment order = payments.findOrder(orderId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+        if (requester.getRole() != UserRole.ADMIN && !order.buyerId().equals(requester.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_NOT_OWNER", "조회 권한이 없습니다.");
+        }
+        return payments.findByOrderId(orderId, DEFAULT_LIST_LIMIT).stream().map(PaymentResponse::from).toList();
     }
 
     private User requireBuyer(String email) {

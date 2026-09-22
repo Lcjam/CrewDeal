@@ -1,6 +1,7 @@
 package com.groupdrop.campaign;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -109,6 +110,92 @@ class CampaignFlowApiTest {
                         .content(duplicateOptions))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PRODUCT_SKU_OPTION_DUPLICATE"));
+    }
+
+    @Test
+    void 목록_API는_역할과_표시용_필드를_지킨다() throws Exception {
+        ProductFixture product = createProduct(uniqueName("목록상품"));
+        Long campaignId = createDraftCampaign(uniqueSlug("list-campaign"));
+        jdbc.update("UPDATE campaigns SET status = 'SOLD_OUT' WHERE id = ?", campaignId);
+        jdbc.update("UPDATE campaigns SET starts_at = ?, ends_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(Instant.now(clock).minusSeconds(60)),
+                java.sql.Timestamp.from(Instant.now(clock).plusSeconds(3600)), campaignId);
+        jdbc.update("UPDATE campaign_inventories SET available_quantity = 0 WHERE campaign_sku_id IN "
+                + "(SELECT id FROM campaign_skus WHERE campaign_id = ?)", campaignId);
+        Long draftId = createDraftCampaign(uniqueSlug("hidden-draft"));
+        Long reviewingId = createDraftCampaign(uniqueSlug("hidden-reviewing"));
+        jdbc.update("UPDATE campaigns SET status = 'REVIEWING' WHERE id = ?", reviewingId);
+        Long closedId = createDraftCampaign(uniqueSlug("list-closed"));
+        jdbc.update("UPDATE campaigns SET status = 'CLOSED' WHERE id = ?", closedId);
+
+        mockMvc.perform(get("/api/campaigns").session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + campaignId + ")].status", hasItem("SOLD_OUT")))
+                .andExpect(jsonPath("$[?(@.id == " + campaignId + ")].skus[0].availableQuantity", hasItem(0)))
+                .andExpect(jsonPath("$[?(@.id == " + campaignId + ")].commissionRateBp").doesNotExist());
+        mockMvc.perform(get("/api/campaigns").session(login("buyer1@groupdrop.test")))
+                .andExpect(jsonPath("$[?(@.id == " + draftId + ")]").isEmpty())
+                .andExpect(jsonPath("$[?(@.id == " + reviewingId + ")]").isEmpty());
+        mockMvc.perform(get("/api/campaigns").param("status", "SOLD_OUT,CLOSED").session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + campaignId + ")].status", hasItem("SOLD_OUT")))
+                .andExpect(jsonPath("$[?(@.id == " + closedId + ")].status", hasItem("CLOSED")));
+
+        mockMvc.perform(get("/api/campaigns").param("status", "DRAFT").session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_STATUS_FILTER"));
+
+        mockMvc.perform(get("/api/influencers/me/campaigns").session(login("supplier@groupdrop.test")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/influencers/me/campaigns").session(login("influencer@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + draftId + ")].status", hasItem("DRAFT")));
+        mockMvc.perform(get("/api/admin/campaigns").session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/products").session(login("influencer@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + product.productId() + ")].supplierId", hasItem(supplierId().intValue())))
+                .andExpect(jsonPath("$[?(@.id == " + product.productId() + ")].skus[0].optionName", hasItem("옵션A")));
+        mockMvc.perform(get("/api/suppliers/me/products").session(login("supplier@groupdrop.test")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + product.productId() + ")].supplierName").exists());
+        mockMvc.perform(get("/api/products").session(login("buyer1@groupdrop.test")))
+                .andExpect(status().isForbidden());
+
+        String email = "profile-missing-" + uniqueToken() + "@groupdrop.test";
+        userRepository.save(new User(email, passwordEncoder.encode(SEED_PASSWORD), "missing", UserRole.INFLUENCER,
+                Instant.now(clock)));
+        mockMvc.perform(get("/api/influencers/me/campaigns").session(login(email)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("INFLUENCER_NOT_FOUND"));
+
+        String supplierEmail = "supplier-missing-" + uniqueToken() + "@groupdrop.test";
+        userRepository.save(new User(supplierEmail, passwordEncoder.encode(SEED_PASSWORD), "missing", UserRole.SUPPLIER,
+                Instant.now(clock)));
+        mockMvc.perform(get("/api/suppliers/me/campaigns").session(login(supplierEmail)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SUPPLIER_NOT_FOUND"));
+    }
+
+    @Test
+    void 운영자_캠페인_목록은_최신순_100건과_빈_필터를_지킨다() throws Exception {
+        Long supplierId = supplierId();
+        Long influencerId = influencerRepository.findByUserId(
+                userRepository.findByEmail("influencer@groupdrop.test").orElseThrow().getId()).orElseThrow().getId();
+        Long productId = createProduct(uniqueName("목록한도상품")).productId();
+        for (int index = 0; index < 101; index++) {
+            jdbc.update("""
+                    INSERT INTO campaigns(name,slug,influencer_id,supplier_id,product_id,status,deal_price,
+                        per_user_purchase_limit,starts_at,ends_at,created_at,updated_at)
+                    VALUES(?,?,?,?,?,'DRAFT',19900,2,now(),now() + interval '1 day',now(),now())
+                    """, "목록 한도 " + index, uniqueSlug("list-limit"), influencerId, supplierId, productId);
+        }
+
+        Long latestId = jdbc.queryForObject("SELECT max(id) FROM campaigns WHERE name LIKE '목록 한도 %'", Long.class);
+        mockMvc.perform(get("/api/admin/campaigns").param("status", "DRAFT").session(login("admin@groupdrop.test")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(100))
+                .andExpect(jsonPath("$[0].id").value(latestId));
+        mockMvc.perform(get("/api/admin/campaigns").param("status", "CANCELLED").session(login("admin@groupdrop.test")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
     }
 
     // ---- 2. 캠페인 생성 시 재고·정책 버전 생성 ----

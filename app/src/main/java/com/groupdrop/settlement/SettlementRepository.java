@@ -271,6 +271,23 @@ public class SettlementRepository {
         return jdbc.query(BATCH_SELECT + " WHERE b.campaign_id = ? ORDER BY b.id", this::mapBatch, campaignId);
     }
 
+    /** 운영자 목록용 배치 조회. 표시 이름은 목록 계약에서만 조인하며 배치 단건 계약은 바꾸지 않는다. */
+    public List<AdminBatch> findAdminBatches(Long campaignId, List<String> statuses, int limit) {
+        List<Object> args = new java.util.ArrayList<>();
+        StringBuilder sql = new StringBuilder(ADMIN_BATCH_SELECT)
+                .append(" WHERE b.status IN (")
+                .append(placeholders(statuses.size())).append(")");
+        args.addAll(statuses);
+        if (campaignId != null) {
+            sql.append(" AND b.campaign_id = ?");
+            args.add(campaignId);
+        }
+        sql.append(" ORDER BY b.id DESC LIMIT ?");
+        args.add(limit);
+        return jdbc.query(sql.toString(), (rs, rowNum) -> new AdminBatch(mapBatch(rs, rowNum),
+                rs.getString("campaign_name")), args.toArray());
+    }
+
     /** 스케줄러가 지급을 실행할 대상. PENDING(검증 대기)과 READY(지급 대기)를 함께 집는다. */
     public List<Batch> findBatchesInStatus(List<SettlementBatchStatus> statuses, int limit) {
         Object[] args = new Object[statuses.size() + 1];
@@ -462,6 +479,14 @@ public class SettlementRepository {
               FROM settlement_batches b
             """;
 
+    private static final String ADMIN_BATCH_SELECT = """
+            SELECT b.id, b.campaign_id, b.payee_type, b.payee_id, b.batch_type, b.status, b.total_amount,
+                   b.determined_at, b.attempts, b.failure_code, b.failure_reason, b.hold_reason,
+                   b.created_at, b.completed_at, c.name AS campaign_name
+              FROM settlement_batches b
+              JOIN campaigns c ON c.id = b.campaign_id
+            """;
+
     private Batch mapBatch(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         return new Batch(rs.getLong("id"), rs.getLong("campaign_id"),
                 PayeeType.valueOf(rs.getString("payee_type")), rs.getLong("payee_id"),
@@ -493,6 +518,8 @@ public class SettlementRepository {
                         Instant completedAt) { }
 
     public record BatchItem(Long id, Long orderId, Long orderItemId, long amount) { }
+
+    public record AdminBatch(Batch batch, String campaignName) { }
 
     public record SettledItem(Long id, Long batchId, Long orderItemId, long amount, PayeeType payeeType,
                               Long payeeId, Long campaignId, SettlementBatchStatus batchStatus) { }

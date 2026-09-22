@@ -35,4 +35,9 @@ public class PaymentController {
     public ResponseEntity<PaymentResponse> get(Authentication authentication, @PathVariable Long paymentId) {
         return ResponseEntity.ok(paymentService.getPayment(authentication.getName(), paymentId));
     }
+
+    @GetMapping("/api/orders/{orderId}/payments")
+    public ResponseEntity<java.util.List<PaymentResponse>> list(Authentication authentication, @PathVariable Long orderId) {
+        return ResponseEntity.ok(paymentService.listOrderPayments(authentication.getName(), orderId));
+    }
 }

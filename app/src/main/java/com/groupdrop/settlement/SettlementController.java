@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,6 +20,13 @@ public class SettlementController {
 
     public SettlementController(SettlementService settlements) {
         this.settlements = settlements;
+    }
+
+    @GetMapping("/api/admin/settlements")
+    public ResponseEntity<List<SettlementService.AdminSettlementResponse>> list(
+            Authentication authentication, @RequestParam(required = false) Long campaignId,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(settlements.adminBatches(authentication.getName(), campaignId, status));
     }
 
     @PostMapping("/api/admin/settlements")

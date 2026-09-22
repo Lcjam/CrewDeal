@@ -197,6 +197,41 @@ public class PaymentRepository {
         return jdbc.query(SELECT_PAYMENT + " WHERE p.id = ?", this::mapPayment, paymentId).stream().findFirst();
     }
 
+    public Optional<OrderForPayment> findOrder(Long orderId) {
+        return jdbc.query("""
+                SELECT id, buyer_id, status, total_amount, expires_at FROM orders WHERE id = ?
+                """, (rs, rowNum) -> new OrderForPayment(rs.getLong("id"), rs.getLong("buyer_id"),
+                rs.getString("status"), rs.getLong("total_amount"), rs.getTimestamp("expires_at").toInstant()),
+                orderId).stream().findFirst();
+    }
+
+    public List<PaymentSnapshot> findByOrderId(Long orderId, int limit) {
+        return jdbc.query(SELECT_PAYMENT + " WHERE p.order_id = ? ORDER BY p.id DESC LIMIT ?",
+                this::mapPayment, orderId, limit);
+    }
+
+    public List<AdminPayment> findAdminPayments(List<String> statuses, Long campaignId, boolean oldestFirst,
+                                                int limit) {
+        String order = oldestFirst ? "ASC" : "DESC";
+        String placeholders = String.join(",", java.util.Collections.nCopies(statuses.size(), "?"));
+        java.util.ArrayList<Object> args = new java.util.ArrayList<>(statuses);
+        args.add(campaignId);
+        args.add(campaignId);
+        args.add(limit);
+        return jdbc.query("""
+                SELECT p.id, p.order_id, c.id AS campaign_id, c.name AS campaign_name, p.status, p.amount,
+                       p.provider_payment_id, p.created_at, p.approved_at
+                  FROM payments p JOIN orders o ON o.id = p.order_id JOIN campaigns c ON c.id = o.campaign_id
+                 WHERE p.status IN (%s) AND (CAST(? AS BIGINT) IS NULL OR c.id = ?)
+                 ORDER BY p.id %s LIMIT ?
+                """.formatted(placeholders, order), (rs, rowNum) -> new AdminPayment(rs.getLong("id"),
+                rs.getLong("order_id"), rs.getLong("campaign_id"), rs.getString("campaign_name"),
+                rs.getString("status"), rs.getLong("amount"), rs.getString("provider_payment_id"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("approved_at") == null ? null : rs.getTimestamp("approved_at").toInstant()),
+                args.toArray());
+    }
+
     public Optional<PaymentSnapshot> findByProviderPaymentId(String providerPaymentId) {
         return jdbc.query(SELECT_PAYMENT + " WHERE p.provider_payment_id = ?", this::mapPayment,
                 providerPaymentId).stream().findFirst();
@@ -266,4 +301,7 @@ public class PaymentRepository {
                                   Instant approvedAt, Instant createdAt) { }
 
     public record OrphanCandidate(Long id, Long orderId) { }
+
+    public record AdminPayment(Long id, Long orderId, Long campaignId, String campaignName, String status,
+                               long amount, String providerPaymentId, Instant createdAt, Instant approvedAt) { }
 }
