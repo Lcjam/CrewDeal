@@ -12,6 +12,7 @@ import com.groupdrop.refund.RefundReconciliationSupport;
 import com.groupdrop.refund.RefundRepository;
 import com.groupdrop.refund.RefundService;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -225,8 +226,8 @@ class ReconciliationIntegrationTest extends AbstractPaymentIntegrationTest {
         Long paymentId = pay(order).body().id();
         outboxWorker.drain();
         String providerPaymentId = providerPaymentIdOf(paymentId);
-        Instant approvedAt = Instant.now().minusSeconds(60);
-        Instant completedAt = Instant.now().minusSeconds(30);
+        Instant approvedAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS).minusSeconds(60);
+        Instant completedAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS).minusSeconds(30);
         jdbc.update("UPDATE payments SET status='REFUNDED', approved_at=? WHERE id=?",
                 java.sql.Timestamp.from(approvedAt), paymentId);
         Long refundId = refundRepository.insertRequested(paymentId, order.orderId(), DEAL_PRICE,

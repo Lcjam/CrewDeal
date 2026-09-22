@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 캠페인 생성·승인·상태 조회 API (CAM-01~05, 14.1). */
@@ -52,6 +53,27 @@ public class CampaignController {
     @GetMapping("/api/campaigns/{campaignId}")
     public ResponseEntity<CampaignResponse> get(@PathVariable Long campaignId) {
         return ResponseEntity.ok(campaignService.getCampaign(campaignId));
+    }
+
+    @GetMapping("/api/campaigns")
+    public ResponseEntity<java.util.List<PublicCampaignListResponse>> list(@RequestParam(required = false) String status) {
+        return ResponseEntity.ok(campaignService.publicCampaigns(status));
+    }
+
+    @GetMapping("/api/influencers/me/campaigns")
+    public ResponseEntity<java.util.List<CampaignListResponse>> myInfluencerCampaigns(Authentication authentication) {
+        return ResponseEntity.ok(campaignService.myInfluencerCampaigns(authentication.getName()));
+    }
+
+    @GetMapping("/api/suppliers/me/campaigns")
+    public ResponseEntity<java.util.List<CampaignListResponse>> mySupplierCampaigns(Authentication authentication) {
+        return ResponseEntity.ok(campaignService.mySupplierCampaigns(authentication.getName()));
+    }
+
+    @GetMapping("/api/admin/campaigns")
+    public ResponseEntity<java.util.List<CampaignListResponse>> adminCampaigns(
+            Authentication authentication, @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(campaignService.adminCampaigns(authentication.getName(), status));
     }
 
     @GetMapping("/api/campaigns/{campaignId}/status")

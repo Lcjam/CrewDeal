@@ -79,6 +79,17 @@ public class ReconciliationRepository {
                 instant(rs.getTimestamp("finished_at")), rs.getString("error")), runId).stream().findFirst();
     }
 
+    public List<Run> findRecentRuns(int limit) {
+        return jdbc.query("""
+                SELECT id, status, min_age_minutes, provider_transaction_count, internal_payment_count,
+                       mismatch_count, resolved_count, ledger_unbalanced_count, started_at, finished_at, error
+                  FROM reconciliation_runs ORDER BY id DESC LIMIT ?
+                """, (rs, rowNum) -> new Run(rs.getLong("id"), rs.getString("status"),
+                rs.getInt("min_age_minutes"), rs.getInt("provider_transaction_count"), rs.getInt("internal_payment_count"),
+                rs.getInt("mismatch_count"), rs.getInt("resolved_count"), rs.getInt("ledger_unbalanced_count"),
+                instant(rs.getTimestamp("started_at")), instant(rs.getTimestamp("finished_at")), rs.getString("error")), limit);
+    }
+
     // ── 대사 입력 ────────────────────────────────────────────────────────────────────
 
     /**

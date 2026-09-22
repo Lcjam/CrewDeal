@@ -119,6 +119,40 @@ public class LedgerRepository {
         return balances;
     }
 
+    /** 캠페인 원장의 차변·대변 합계. 순잔액의 원천인 {@link #campaignBalances(Long)}는 건드리지 않는다. */
+    public EntryTotals campaignEntryTotals(Long campaignId) {
+        return jdbc.queryForObject("""
+                SELECT COALESCE(SUM(CASE WHEN e.side = 'DEBIT' THEN e.amount ELSE 0 END), 0) AS debit_total,
+                       COALESCE(SUM(CASE WHEN e.side = 'CREDIT' THEN e.amount ELSE 0 END), 0) AS credit_total
+                  FROM ledger_entries e
+                  JOIN ledger_transactions t ON t.id = e.transaction_id
+                 WHERE t.campaign_id = ?
+                """, (rs, rowNum) -> new EntryTotals(rs.getLong("debit_total"), rs.getLong("credit_total")),
+                campaignId);
+    }
+
+    /** 운영자 원장 화면용 주문별 분개. 역분개를 거래 단위로 묶기 위해 거래 메타데이터도 함께 읽는다. */
+    public List<OrderPosting> findOrderPostings(Long orderId) {
+        return jdbc.query("""
+                WITH recent_transactions AS (
+                    SELECT id, transaction_type, reference_type, reference_id, occurred_at
+                      FROM ledger_transactions
+                     WHERE order_id = ?
+                     ORDER BY id DESC
+                     LIMIT 100
+                )
+                SELECT t.id AS transaction_id, t.transaction_type, t.reference_type, t.reference_id, t.occurred_at,
+                       a.code AS account_code, e.side, e.amount
+                  FROM recent_transactions t
+                  JOIN ledger_entries e ON e.transaction_id = t.id
+                  JOIN ledger_accounts a ON a.id = e.account_id
+                 ORDER BY t.id DESC, e.id
+                """, (rs, rowNum) -> new OrderPosting(rs.getLong("transaction_id"),
+                rs.getString("transaction_type"), rs.getString("reference_type"), rs.getLong("reference_id"),
+                rs.getTimestamp("occurred_at").toInstant(), rs.getString("account_code"),
+                rs.getString("side"), rs.getLong("amount")), orderId);
+    }
+
     /** 캠페인의 결제·환불 거래 건수. 예상 정산액 응답의 근거 수치로 노출한다. */
     public Counts campaignCounts(Long campaignId) {
         return jdbc.query("""
@@ -190,6 +224,11 @@ public class LedgerRepository {
     public record Scope(Long campaignId, Long orderId) { }
 
     public record Counts(long paymentCount, long refundCount) { }
+
+    public record EntryTotals(long debitTotal, long creditTotal) { }
+
+    public record OrderPosting(Long transactionId, String transactionType, String referenceType, Long referenceId,
+                               Instant occurredAt, String accountCode, String side, long amount) { }
 
     public record OrderPricing(Long campaignId, long totalAmount, int commissionRateBp, long supplyTotal) { }
 

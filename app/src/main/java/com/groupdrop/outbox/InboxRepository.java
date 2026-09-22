@@ -94,9 +94,26 @@ public class InboxRepository {
         return count == null ? 0L : count;
     }
 
+    /** 운영 목록에는 웹훅 원문(payload)을 절대 노출하지 않는다. */
+    public List<Event> findEvents(List<String> statuses, int limit) {
+        String placeholders = String.join(",", java.util.Collections.nCopies(statuses.size(), "?"));
+        java.util.ArrayList<Object> args = new java.util.ArrayList<>(statuses);
+        args.add(limit);
+        return jdbc.query("""
+                SELECT id, provider_event_id, event_type, status, attempts, last_error, received_at, processed_at
+                  FROM inbox_events WHERE status IN (%s) ORDER BY id DESC LIMIT ?
+                """.formatted(placeholders), (rs, rowNum) -> new Event(rs.getLong("id"),
+                rs.getString("provider_event_id"), rs.getString("event_type"), rs.getString("status"),
+                rs.getInt("attempts"), rs.getString("last_error"), rs.getTimestamp("received_at").toInstant(),
+                rs.getTimestamp("processed_at") == null ? null : rs.getTimestamp("processed_at").toInstant()), args.toArray());
+    }
+
     private static Timestamp ts(Instant instant) {
         return Timestamp.from(instant);
     }
 
     public record ClaimedEvent(Long id, String providerEventId, String eventType, String payload, int attempts) { }
+
+    public record Event(Long id, String providerEventId, String eventType, String status, int attempts,
+                        String lastError, Instant receivedAt, Instant processedAt) { }
 }

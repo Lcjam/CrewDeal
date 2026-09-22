@@ -121,6 +121,19 @@ public class OutboxRepository {
         return count == null ? 0L : count;
     }
 
+    public List<Event> findEvents(List<String> statuses, int limit) {
+        String placeholders = String.join(",", java.util.Collections.nCopies(statuses.size(), "?"));
+        java.util.ArrayList<Object> args = new java.util.ArrayList<>(statuses);
+        args.add(limit);
+        return jdbc.query("""
+                SELECT id, event_type, aggregate_type, aggregate_id, status, attempts, last_error, created_at, processed_at
+                  FROM outbox_events WHERE status IN (%s) ORDER BY id DESC LIMIT ?
+                """.formatted(placeholders), (rs, rowNum) -> new Event(rs.getLong("id"), rs.getString("event_type"),
+                rs.getString("aggregate_type"), rs.getLong("aggregate_id"), rs.getString("status"),
+                rs.getInt("attempts"), rs.getString("last_error"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("processed_at") == null ? null : rs.getTimestamp("processed_at").toInstant()), args.toArray());
+    }
+
     /** PENDING 이벤트 수와 가장 오래된 created_at을 한 DB 스냅샷으로 읽는다 (16.4). */
     public PendingStats pendingStats() {
         return jdbc.queryForObject("""
@@ -147,4 +160,7 @@ public class OutboxRepository {
     public record ClaimedEvent(Long id, String eventType, Long aggregateId, String payload, int attempts) { }
 
     public record PendingStats(long count, Instant oldestCreatedAt) { }
+
+    public record Event(Long id, String eventType, String aggregateType, Long aggregateId, String status,
+                        int attempts, String lastError, Instant createdAt, Instant processedAt) { }
 }

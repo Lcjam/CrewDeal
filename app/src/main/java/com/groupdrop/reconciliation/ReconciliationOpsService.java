@@ -2,6 +2,8 @@ package com.groupdrop.reconciliation;
 
 import com.groupdrop.common.ApiException;
 import com.groupdrop.common.AuditLogRepository;
+import com.groupdrop.common.StatusFilter;
+import com.groupdrop.payment.PaymentRepository;
 import com.groupdrop.outbox.OutboxRepository;
 import com.groupdrop.outbox.InboxRepository;
 import com.groupdrop.payment.PaymentRecoveryService;
@@ -13,6 +15,7 @@ import com.groupdrop.user.UserRole;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,9 @@ import org.springframework.stereotype.Service;
 public class ReconciliationOpsService {
 
     private static final int DEFAULT_LIST_LIMIT = 100;
+    private static final Set<String> PAYMENT_STATUSES = Set.of("READY", "PROCESSING", "SUCCEEDED", "FAILED", "UNKNOWN", "SUPERSEDED", "REFUNDING", "REFUNDED");
+    private static final Set<String> OUTBOX_STATUSES = Set.of("PENDING", "PROCESSED", "FAILED");
+    private static final Set<String> INBOX_STATUSES = Set.of("PENDING", "PROCESSED", "IGNORED", "FAILED");
 
     private final ReconciliationRepository reconciliations;
     private final ReconciliationService reconciliationService;
@@ -34,6 +40,7 @@ public class ReconciliationOpsService {
     private final SettlementRepository settlements;
     private final OutboxRepository outbox;
     private final InboxRepository inbox;
+    private final PaymentRepository payments;
     private final AuditLogRepository auditLogs;
     private final UserRepository users;
     private final Clock clock;
@@ -42,6 +49,7 @@ public class ReconciliationOpsService {
                                     ReconciliationService reconciliationService,
                                     PaymentRecoveryService paymentRecovery, SettlementRepository settlements,
                                     OutboxRepository outbox, InboxRepository inbox,
+                                    PaymentRepository payments,
                                     AuditLogRepository auditLogs,
                                     UserRepository users, Clock clock) {
         this.reconciliations = reconciliations;
@@ -50,6 +58,7 @@ public class ReconciliationOpsService {
         this.settlements = settlements;
         this.outbox = outbox;
         this.inbox = inbox;
+        this.payments = payments;
         this.auditLogs = auditLogs;
         this.users = users;
         this.clock = clock;
@@ -82,6 +91,28 @@ public class ReconciliationOpsService {
     public List<ReconciliationRepository.Discrepancy> discrepancies(String requesterEmail, String status) {
         requireAdmin(requesterEmail);
         return reconciliations.findDiscrepancies(status, DEFAULT_LIST_LIMIT);
+    }
+
+    public List<PaymentRepository.AdminPayment> payments(String requesterEmail, String status, Long campaignId) {
+        requireAdmin(requesterEmail);
+        List<String> statuses = StatusFilter.parse(status, PAYMENT_STATUSES, List.of("UNKNOWN"));
+        boolean oldestFirst = statuses.stream().allMatch(value -> Set.of("READY", "PROCESSING", "UNKNOWN").contains(value));
+        return payments.findAdminPayments(statuses, campaignId, oldestFirst, DEFAULT_LIST_LIMIT);
+    }
+
+    public List<ReconciliationRepository.Run> runs(String requesterEmail) {
+        requireAdmin(requesterEmail);
+        return reconciliations.findRecentRuns(DEFAULT_LIST_LIMIT);
+    }
+
+    public List<OutboxRepository.Event> outboxEvents(String requesterEmail, String status) {
+        requireAdmin(requesterEmail);
+        return outbox.findEvents(StatusFilter.parse(status, OUTBOX_STATUSES, List.of("PENDING", "FAILED")), DEFAULT_LIST_LIMIT);
+    }
+
+    public List<InboxRepository.Event> inboxEvents(String requesterEmail, String status) {
+        requireAdmin(requesterEmail);
+        return inbox.findEvents(StatusFilter.parse(status, INBOX_STATUSES, List.of("PENDING", "FAILED", "IGNORED")), DEFAULT_LIST_LIMIT);
     }
 
     /**
