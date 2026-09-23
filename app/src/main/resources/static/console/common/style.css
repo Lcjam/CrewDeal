@@ -1,0 +1,560 @@
+/* style.css — 운영 콘솔 공용 스타일 (프론트엔드 계획 §5.2)
+ *
+ * 목표: 차분하고 밀도 있는 내부 도구 느낌. 그라디언트·이모지·글래스모피즘·과도한 둥근 카드와
+ * 그림자·중앙정렬 히어로 섹션을 쓰지 않는다. 시스템 폰트, 중립 회색 + 단일 강조색,
+ * 상태별 배지 색, 큰 숫자 요약 카드(운영 요약 헤더용). 375px까지 반응형. 다크모드 지원.
+ */
+
+:root {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-alt: #eceef1;
+  --color-border: #d7dbe0;
+  --color-text: #1c2127;
+  --color-text-muted: #5b6472;
+  --color-accent: #2f5fb3;
+  --color-accent-text: #ffffff;
+
+  --color-green: #1f7a3d;
+  --color-green-bg: #e3f3e8;
+  --color-yellow: #92650b;
+  --color-yellow-bg: #fbeecb;
+  --color-red: #a3271f;
+  --color-red-bg: #f8e0de;
+  --color-blue: #2f5fb3;
+  --color-blue-bg: #e3ebf8;
+  --color-gray: #565d66;
+  --color-gray-bg: #e7e9ec;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --radius: 4px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #14171c;
+    --color-surface: #1b1f26;
+    --color-surface-alt: #232833;
+    --color-border: #333a45;
+    --color-text: #e6e9ee;
+    --color-text-muted: #9aa4b2;
+    --color-accent: #6d9bef;
+    --color-accent-text: #0d1117;
+
+    --color-green: #6fcf8e;
+    --color-green-bg: #163524;
+    --color-yellow: #e3b74d;
+    --color-yellow-bg: #3a2e12;
+    --color-red: #ea8a83;
+    --color-red-bg: #3c1c1a;
+    --color-blue: #6d9bef;
+    --color-blue-bg: #182742;
+    --color-gray: #aab2bd;
+    --color-gray-bg: #262c35;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #14171c;
+  --color-surface: #1b1f26;
+  --color-surface-alt: #232833;
+  --color-border: #333a45;
+  --color-text: #e6e9ee;
+  --color-text-muted: #9aa4b2;
+  --color-accent: #6d9bef;
+  --color-accent-text: #0d1117;
+
+  --color-green: #6fcf8e;
+  --color-green-bg: #163524;
+  --color-yellow: #e3b74d;
+  --color-yellow-bg: #3a2e12;
+  --color-red: #ea8a83;
+  --color-red-bg: #3c1c1a;
+  --color-blue: #6d9bef;
+  --color-blue-bg: #182742;
+  --color-gray: #aab2bd;
+  --color-gray-bg: #262c35;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-bottom: 96px; /* 하단 요청 ID 표시줄 자리 */
+}
+
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--spacing-4);
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 var(--spacing-3);
+}
+
+h1 { font-size: 20px; }
+h2 { font-size: 16px; }
+h3 { font-size: 14px; color: var(--color-text-muted); }
+
+p { margin: 0 0 var(--spacing-3); }
+
+a {
+  color: var(--color-accent);
+}
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* --- 헤더 --- */
+
+.app-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-3) var(--spacing-4);
+}
+
+.app-header__top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-3);
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.app-header__identity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+}
+
+.app-header__app-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.app-header__role {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.app-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.app-header__host {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+}
+
+.app-header__menu {
+  max-width: 1120px;
+  margin: var(--spacing-2) auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+}
+
+.nav-link {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.nav-link:hover {
+  background: var(--color-surface-alt);
+}
+
+.nav-link--active {
+  background: var(--color-blue-bg);
+  color: var(--color-blue);
+  font-weight: 600;
+}
+
+/* --- 알림 --- */
+
+.notice {
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: var(--spacing-2) var(--spacing-3);
+  margin: var(--spacing-3) auto;
+  max-width: 1120px;
+  font-size: 13px;
+}
+
+.notice--local-only {
+  border-left-color: var(--color-gray);
+  color: var(--color-text-muted);
+  background: transparent;
+  margin: 0;
+  border-radius: 0;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  text-align: center;
+  padding: 4px;
+}
+
+.notice--info {
+  border-left-color: var(--color-blue);
+  background: var(--color-blue-bg);
+}
+
+.notice--warning {
+  border-left-color: var(--color-yellow);
+  background: var(--color-yellow-bg);
+}
+
+.notice--danger {
+  border-left-color: var(--color-red);
+  background: var(--color-red-bg);
+}
+
+.notice--success {
+  border-left-color: var(--color-green);
+  background: var(--color-green-bg);
+}
+
+/* --- 버튼 --- */
+
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-surface-alt);
+}
+
+.btn-danger {
+  background: var(--color-red);
+  color: #ffffff;
+}
+
+.btn-block {
+  display: block;
+  width: 100%;
+}
+
+/* --- 폼 --- */
+
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-1);
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  width: 100%;
+}
+
+.form-row {
+  margin-bottom: var(--spacing-3);
+}
+
+/* --- 카드 / 요약 숫자 --- */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+}
+
+.summary-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--spacing-3);
+}
+
+.summary-card__label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-1);
+}
+
+.summary-card__number {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.summary-card--zero .summary-card__number {
+  color: var(--color-green);
+}
+
+.summary-card--nonzero .summary-card__number {
+  color: var(--color-yellow);
+}
+
+/* --- 표 --- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface);
+  font-size: 13px;
+}
+
+th, td {
+  text-align: left;
+  padding: var(--spacing-2) var(--spacing-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+tbody tr:hover {
+  background: var(--color-surface-alt);
+}
+
+/* --- 상태 배지 --- */
+
+.status-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.6;
+}
+
+.status-badge--green { background: var(--color-green-bg); color: var(--color-green); }
+.status-badge--yellow { background: var(--color-yellow-bg); color: var(--color-yellow); }
+.status-badge--red { background: var(--color-red-bg); color: var(--color-red); }
+.status-badge--blue { background: var(--color-blue-bg); color: var(--color-blue); }
+.status-badge--gray { background: var(--color-gray-bg); color: var(--color-gray); }
+
+/* --- 카운트다운 --- */
+
+countdown-timer {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.countdown-timer--expired {
+  color: var(--color-red);
+}
+
+/* --- 요청 ID 표시줄 --- */
+
+.request-log {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: var(--spacing-1) var(--spacing-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  max-height: 90px;
+  overflow-y: auto;
+}
+
+.request-log__label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.request-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.request-log__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  padding: 1px 0;
+  min-width: 0; /* flex 자식이 text-overflow: ellipsis를 쓰려면 필요 */
+}
+
+.request-log__method {
+  flex: 0 0 auto;
+  width: 4em;
+  color: var(--color-text);
+}
+
+.request-log__path {
+  flex: 1 1 auto;
+  min-width: 0; /* 좁은 화면에서 말줄임이 걸리게 한다 — id를 숨기지 않는다 (Minor 8) */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-log__status { flex: 0 0 auto; width: 3em; }
+.request-log__status--ok { color: var(--color-green); }
+.request-log__status--warn { color: var(--color-yellow); }
+.request-log__status--error { color: var(--color-red); }
+
+.request-log__id {
+  flex: 0 0 auto;
+  width: 20em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- 로그인 화면 전용 --- */
+
+.login-shell {
+  max-width: 480px;
+  margin: 48px auto;
+  padding: 0 var(--spacing-4);
+}
+
+.login-shell h1 {
+  font-size: 22px;
+}
+
+.host-banner {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-alt);
+  margin-bottom: var(--spacing-4);
+}
+
+.seed-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.seed-buttons .btn {
+  text-align: left;
+  padding: var(--spacing-3);
+}
+
+.seed-buttons .btn small {
+  display: block;
+  font-weight: 400;
+  color: inherit;
+  opacity: 0.75;
+}
+
+/* --- 반응형 (375px까지) --- */
+
+@media (max-width: 480px) {
+  .app-header__top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-header__meta {
+    flex-wrap: wrap;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* 요청 ID는 숨기지 않는다 — 대신 좁아진 만큼 경로(path)가 먼저 말줄임된다 (Minor 8). */
+  .request-log__id {
+    width: 8em;
+  }
+
+  .request-log__method {
+    width: 3em;
+  }
+
+  main {
+    padding: var(--spacing-3);
+  }
+}

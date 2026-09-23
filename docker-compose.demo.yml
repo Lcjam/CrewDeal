@@ -1,0 +1,13 @@
+# 시연 스택 override (프론트엔드 계획 §2 "시연 스택").
+#
+# 기본 정산 유예기간은 7일(application.yml)이라 화면만으로 정산·HELD 시연이 불가능하다.
+# app 서비스에서만 groupdrop.settlement-grace-period를 0s로 낮춰, 캠페인이 CLOSED 되는 즉시
+# 정산 스케줄러(10초 주기)가 대상 확정에 들어가게 한다. 기본 스택과 release-gate.sh는 영향이 없다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#   ./ops/demo/seed-demo.sh
+services:
+  app:
+    environment:
+      GROUPDROP_SETTLEMENT_GRACE_PERIOD: 0s
