@@ -1,3 +1,11 @@
+server:
+  servlet:
+    session:
+      cookie:
+        # JS 클라이언트(/console/**)가 생기면서 CSRF 비활성의 전제가 SameSite=Strict 세션 쿠키로 바뀐다
+        # (프론트엔드 계획 §2·5.1). 동일 출처 fetch는 영향이 없고 교차 사이트 폼 위조만 막는다.
+        same-site: strict
+
 spring:
   application:
     name: groupdrop

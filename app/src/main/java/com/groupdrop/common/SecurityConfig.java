@@ -45,7 +45,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                      SecurityContextRepository securityContextRepository) throws Exception {
         http
-                // 브라우저 폼이 없는 API 데모 범위 — 쿠키 세션이지만 CSRF 토큰을 다룰 폼/JS 클라이언트가 없어 비활성화
+                // JS 클라이언트(/console/**)가 생겼으므로 CSRF 방어는 SameSite=Strict 세션 쿠키가 맡는다
+                // (application.yml, 프론트엔드 계획 §2).
                 .csrf(AbstractHttpConfigurer::disable)
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
                 .authorizeHttpRequests(auth -> auth
@@ -56,6 +57,8 @@ public class SecurityConfig {
                         // 운영 콘솔 정적 셸과 API 문서는 공개하지만, 콘솔이 호출하는 /api/admin/** 는 인증을 유지한다.
                         .requestMatchers("/admin/**", "/v3/api-docs/**", "/v3/api-docs.yaml",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // 시연 콘솔 정적 셸. "/console"도 공개해야 ConsoleWebConfig 리다이렉트가 비로그인 상태에서 동작한다.
+                        .requestMatchers("/console", "/console/**").permitAll()
                 .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) ->
