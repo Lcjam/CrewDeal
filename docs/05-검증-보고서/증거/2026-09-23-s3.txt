@@ -1,0 +1,24 @@
+source_commit=97225d2770bf51a741be9c501541040150c49548
+stage=s3
+== S3: 중복·역순 웹훅 Inbox 멱등 ==
+> Task :compileJava
+> Task :processResources
+> Task :classes
+
+> Task :compileTestJava
+Note: /home/lcj/code/CrewDeal/app/src/test/java/com/groupdrop/common/ListApiOpenApiIntegrationTest.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-09-23T18:18:44.502+09:00  INFO 8712 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-23T18:18:44.507+09:00  INFO 8712 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-09-23T18:18:44.513+09:00  INFO 8712 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+> Task :test
+
+[Incubating] Problems report is available at: file:///home/lcj/code/CrewDeal/app/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 19s
+4 actionable tasks: 4 executed
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
