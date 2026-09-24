@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 대사</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 페이지 전용 — 공통화 후보(보고서 참고): detail-fields-grid는 settlements.html과 동일 패턴 */
+    .hint { color: var(--color-text-muted); font-size: 13px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .run-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--spacing-3); }
+    .run-row .form-row { margin-bottom: 0; }
+    .run-row input[type="number"] { width: 120px; }
+    .detail-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--spacing-2) var(--spacing-4); margin: var(--spacing-3) 0; }
+    .detail-fields-grid > div { display: flex; flex-direction: column; gap: 2px; }
+    .detail-fields-grid dt { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--color-text-muted); }
+    .detail-fields-grid dd { margin: 0; font-size: 14px; }
+    .discrepancy-group { margin-bottom: var(--spacing-5); }
+    .discrepancy-group h3 { margin-bottom: 2px; }
+    .pg-compare { display: flex; gap: var(--spacing-4); }
+    .pg-compare__col { min-width: 140px; }
+    .pg-compare__label { display: block; font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 2px; }
+    .discrepancy-actions { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+    .resolve-form:not([hidden]) { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+    .resolve-form input { flex: 1; min-width: 120px; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: var(--spacing-3); align-items: flex-end; }
+    .discrepancy-zero-line span { border-bottom: 1px dotted var(--color-text-muted); cursor: help; }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
+    <h1>대사</h1>
+    <p class="hint">REC-01~02, S7 — 대사 실행, 실행 이력, 불일치 유형별 조회·재처리·해결. 기존 <code>/admin/index.html</code>의 불일치 목록·재처리·해결 기능을 대체합니다.</p>
+
+    <div id="notice" class="notice" hidden></div>
+
+    <section class="card">
+      <h2>대사 실행</h2>
+      <div class="run-row">
+        <div class="form-row">
+          <label for="min-age">minAgeMinutes (기본 30)</label>
+          <input type="number" id="min-age" min="0" step="1" value="30">
+        </div>
+        <button type="button" class="btn btn-secondary" id="min-age-demo-button">시연값 0</button>
+        <button type="button" class="btn btn-primary" id="run-button">대사 실행</button>
+      </div>
+      <p class="hint">시연은 0 — 방금 생긴 거래까지 포함합니다. 운영 기본값은 30분입니다.</p>
+      <div id="run-status" hidden></div>
+      <div id="run-timeout-area"></div>
+    </section>
+
+    <section class="card">
+      <h2>실행 이력</h2>
+      <table id="runs-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>상태</th><th>최소경과(분)</th><th>PG거래</th><th>내부결제</th>
+            <th>불일치</th><th>해결됨</th><th>원장불균형</th><th>시작</th><th>종료</th><th>오류</th>
+          </tr>
+        </thead>
+        <tbody id="runs-body"><tr><td colspan="11">불러오는 중…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>불일치</h2>
+      <div class="filter-bar">
+        <div class="form-row" style="min-width:160px;">
+          <label for="discrepancy-status">상태</label>
+          <select id="discrepancy-status">
+            <option value="OPEN" selected>미해결 (OPEN)</option>
+            <option value="RESOLVED">해결됨 (RESOLVED)</option>
+            <option value="IGNORED">무시됨 (IGNORED)</option>
+            <option value="">전체</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-secondary" id="discrepancy-refresh">새로고침</button>
+      </div>
+      <p class="hint">이 필터는 값 하나만 받고 서버가 검증하지 않습니다 — 잘못된 값은 조용히 빈 목록이 됩니다.</p>
+      <p class="hint" id="discrepancy-limit-note" hidden>최대 100건까지 표시됩니다. 상태 필터로 좁혀 보세요.</p>
+      <div id="discrepancy-groups"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { bootAdmin } from '/console/admin/admin.js';
+    import { initReconciliationPage } from '/console/admin/reconciliation.js';
+    const user = await bootAdmin();
+    if (user) { await initReconciliationPage(); }
+  </script>
+</body></html>

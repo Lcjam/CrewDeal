@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 원장</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .picker-row { display: flex; flex-wrap: wrap; gap: var(--spacing-4); align-items: flex-end; margin-bottom: var(--spacing-4); }
+    .picker-field { min-width: 260px; }
+    .picker-field label { margin-bottom: 2px; }
+    .note { font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0; }
+    .note--cap { color: var(--color-yellow); font-weight: 600; }
+    .balance-check { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 4px 10px; border-radius: var(--radius); }
+    .balance-check--ok { background: var(--color-green-bg); color: var(--color-green); }
+    .balance-check--bad { background: var(--color-red-bg); color: var(--color-red); }
+    .balances-table td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
+    .txn-explainer { font-size: 13px; color: var(--color-text-muted); margin: var(--spacing-2) 0 var(--spacing-3); padding: var(--spacing-2) var(--spacing-3); border-left: 3px solid var(--color-accent); background: var(--color-surface-alt); border-radius: var(--radius); }
+    .txn-card { border: 1px solid var(--color-border); border-left-width: 4px; border-radius: var(--radius); background: var(--color-surface); margin-bottom: var(--spacing-3); padding: var(--spacing-3); }
+    .txn-card--PAYMENT { border-left-color: var(--color-blue); }
+    .txn-card--REFUND { border-left-color: var(--color-yellow); }
+    .txn-card--PAYOUT { border-left-color: var(--color-green); }
+    .txn-card--RECOVERY { border-left-color: var(--color-gray); }
+    .txn-card__head { display: flex; flex-wrap: wrap; gap: var(--spacing-3); align-items: center; margin-bottom: var(--spacing-2); font-size: 13px; color: var(--color-text-muted); }
+    .txn-card__head strong { color: var(--color-text); }
+    .txn-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-3); }
+    .txn-columns h4 { font-size: 12px; color: var(--color-text-muted); margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .txn-columns table { font-size: 13px; }
+    .txn-columns td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .txn-sum { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; }
+    .muted { color: var(--color-text-muted); font-size: 13px; margin: 0; }
+    .unbalanced-table td:nth-child(2), .unbalanced-table td:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
+    section.card h2 { margin-bottom: var(--spacing-2); }
+    #notice:empty { display: none; }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
+    <h1>원장</h1>
+    <p class="muted">캠페인별 계정 잔액과 차대 합계, 주문별 분개를 거래 단위로 보여줍니다 (LED-01~03, ADR-006, S5).</p>
+
+    <div id="notice" role="status" aria-live="polite"></div>
+
+    <div class="picker-row">
+      <div class="picker-field">
+        <label for="campaign-select">캠페인</label>
+        <select id="campaign-select"><option value="">캠페인을 선택하세요</option></select>
+      </div>
+      <div class="picker-field">
+        <label for="order-select">주문 (결제 기록이 있는 주문만)</label>
+        <select id="order-select" disabled><option value="">캠페인을 먼저 선택하세요</option></select>
+        <p class="note note--cap" id="order-select-cap-note" hidden>최대 100건까지만 조회됩니다 — 이보다 오래된 주문은 목록에 없을 수 있습니다.</p>
+      </div>
+    </div>
+
+    <section class="card" id="campaign-ledger-section">
+      <h2>캠페인 원장</h2>
+      <div id="campaign-ledger-body"><p class="muted">캠페인을 선택하면 계정 잔액을 표시합니다.</p></div>
+    </section>
+
+    <section class="card" id="order-ledger-section">
+      <h2>주문별 분개</h2>
+      <p class="txn-explainer">환불은 결제 분개를 고치는 것이 아니라, 반대 방향의 새 <strong>REFUND</strong> 거래로 별도 기록됩니다 — 원장은 불변이며 보정은 반대 분개로만 합니다 (LED-01, ADR-006).</p>
+      <div id="order-ledger-body"><p class="muted">주문을 선택하면 거래별 분개를 표시합니다.</p></div>
+    </section>
+
+    <section class="card" id="unbalanced-section">
+      <h2>원장 무결성</h2>
+      <p class="muted">전체 원장에서 차대가 맞지 않는 거래를 찾습니다 (S5). 자동 갱신되지 않으므로 눌러서 확인하세요.</p>
+      <button type="button" id="unbalanced-check-button" class="btn btn-secondary">불균형 거래 확인</button>
+      <div id="unbalanced-body" style="margin-top: var(--spacing-3);"></div>
+    </section>
+  </main>
+  <script type="module">
+    import { bootAdmin } from '/console/admin/admin.js';
+    import { initLedgerPage } from '/console/admin/ledger.js';
+    import '/console/common/widgets.js';
+    const user = await bootAdmin();
+    if (user) { initLedgerPage(user); }
+  </script>
+</body></html>
