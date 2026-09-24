@@ -28,12 +28,12 @@ const MENUS = {
   ],
   ADMIN: [
     { label: '운영 요약', href: '/console/admin/index.html', ready: true },
-    { label: '캠페인 승인', href: '/console/admin/campaigns.html', ready: false },
-    { label: '결제', href: '/console/admin/payments.html', ready: false },
-    { label: '원장', href: '/console/admin/ledger.html', ready: false },
-    { label: '정산', href: '/console/admin/settlements.html', ready: false },
-    { label: '대사', href: '/console/admin/reconciliation.html', ready: false },
-    { label: '이벤트', href: '/console/admin/events.html', ready: false },
+    { label: '캠페인 승인', href: '/console/admin/campaigns.html', ready: true },
+    { label: '결제', href: '/console/admin/payments.html', ready: true },
+    { label: '원장', href: '/console/admin/ledger.html', ready: true },
+    { label: '정산', href: '/console/admin/settlements.html', ready: true },
+    { label: '대사', href: '/console/admin/reconciliation.html', ready: true },
+    { label: '이벤트', href: '/console/admin/events.html', ready: true },
     { label: '장애 주입 데모', href: '/console/demo/index.html', ready: false },
   ],
 };

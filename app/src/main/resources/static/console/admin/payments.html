@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 결제</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .filters { display: flex; flex-wrap: wrap; gap: var(--spacing-4); align-items: flex-start; margin-bottom: var(--spacing-3); }
+    .filters fieldset { border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--spacing-2) var(--spacing-3); margin: 0; }
+    .filters legend { font-size: 12px; color: var(--color-text-muted); padding: 0 4px; }
+    .status-checks { display: flex; flex-wrap: wrap; gap: var(--spacing-1) var(--spacing-3); max-width: 520px; }
+    .status-checks label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text); margin: 0; }
+    .status-checks input { width: auto; }
+    .filter-field { min-width: 220px; }
+    .filter-field label { margin-bottom: 2px; }
+    .note { font-size: 12px; color: var(--color-text-muted); margin: 0 0 var(--spacing-2); }
+    .note--cap { color: var(--color-yellow); font-weight: 600; }
+    tr.row-detail > td { background: var(--color-surface-alt); padding: var(--spacing-3); }
+    .detail-grid { display: grid; gap: var(--spacing-3); }
+    .detail-section h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-2); font-size: 13px; margin-bottom: var(--spacing-2); word-break: keep-all; }
+    .sub-table { font-size: 12px; margin-top: var(--spacing-1); }
+    .sub-table__row--current { font-weight: 600; }
+    .muted { color: var(--color-text-muted); font-size: 13px; margin: 0; }
+    .refund-form { display: flex; flex-direction: column; gap: var(--spacing-2); max-width: 480px; }
+    .refund-form textarea { font-family: inherit; font-size: 13px; resize: vertical; }
+    .refund-form__actions { display: flex; gap: var(--spacing-2); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .row-actions { white-space: nowrap; }
+    .continue-watching { margin-top: var(--spacing-2); }
+    #notice:empty { display: none; }
+    /* ?orderId=로 넘어왔을 때 찾은 행을 눈에 띄게 한다 (다른 화면에서 링크로 도착한 경우). */
+    tr.row-highlight > td { background: var(--color-blue-bg); }
+    /* 진행 중인 동기화·환불 때문에 지금 필터 밖인데도 지우지 않고 유지 중인 행. */
+    tr.row-pinned > td { background: var(--color-yellow-bg); }
+    .pinned-note { font-size: 11px; color: var(--color-yellow); font-weight: 600; margin-top: 4px; white-space: normal; }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
+    <h1>결제</h1>
+    <p class="muted">
+      기본 필터는 확정 대기(<code>UNKNOWN</code>)만 오래된 순으로 보여줍니다 (REC-02). 행을 펼치면 결제 시도 이력·PG 동기화·환불을 조작할 수 있습니다 (REF-02).
+      목록은 3초마다 자동 새로고침되며, 펼친 행이나 입력 중인 내용은 유지됩니다.
+    </p>
+
+    <div id="notice" role="status" aria-live="polite"></div>
+
+    <div class="filters">
+      <fieldset id="status-filter">
+        <legend>결제 상태</legend>
+        <div class="status-checks">
+          <label><input type="checkbox" value="READY"> 준비(READY)</label>
+          <label><input type="checkbox" value="PROCESSING"> 처리중(PROCESSING)</label>
+          <label><input type="checkbox" value="SUCCEEDED"> 성공(SUCCEEDED)</label>
+          <label><input type="checkbox" value="FAILED"> 실패(FAILED)</label>
+          <label><input type="checkbox" value="UNKNOWN" checked> 확정대기(UNKNOWN)</label>
+          <label><input type="checkbox" value="SUPERSEDED"> 대체됨(SUPERSEDED)</label>
+          <label><input type="checkbox" value="REFUNDING"> 환불중(REFUNDING)</label>
+          <label><input type="checkbox" value="REFUNDED"> 환불완료(REFUNDED)</label>
+        </div>
+      </fieldset>
+      <div class="filter-field">
+        <label for="campaign-filter">캠페인</label>
+        <select id="campaign-filter"><option value="">전체 캠페인</option></select>
+      </div>
+      <div class="filter-field">
+        <label>&nbsp;</label>
+        <button type="button" id="refresh-button" class="btn btn-secondary">지금 새로고침</button>
+      </div>
+    </div>
+
+    <p class="note" id="ordering-note"></p>
+    <p class="note note--cap" id="cap-note" hidden></p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>주문</th><th>캠페인</th><th>상태</th><th>금액</th>
+          <th>PG 결제ID</th><th>생성</th><th>승인</th><th>조작</th>
+        </tr>
+      </thead>
+      <tbody id="payments-tbody">
+        <tr><td colspan="9">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script type="module">
+    import { bootAdmin } from '/console/admin/admin.js';
+    import { initPaymentsPage } from '/console/admin/payments.js';
+    import '/console/common/widgets.js';
+    const user = await bootAdmin();
+    if (user) { initPaymentsPage(user); }
+  </script>
+</body></html>

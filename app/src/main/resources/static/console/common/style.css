@@ -87,7 +87,11 @@
   box-sizing: border-box;
 }
 
-html, body {
+/* 페이지 스타일의 display 규칙이 hidden 속성을 이기지 못하게 한다 */
+[hidden] { display: none !important; }
+
+html,
+body {
   margin: 0;
   padding: 0;
 }
@@ -376,6 +380,7 @@ table {
 
 th, td {
   text-align: left;
+  word-break: keep-all; /* 한국어 단어가 글자 단위로 쪼개지지 않게 */
   padding: var(--spacing-2) var(--spacing-2);
   border-bottom: 1px solid var(--color-border);
 }
@@ -401,6 +406,7 @@ tbody tr:hover {
   padding: 2px 8px;
   border-radius: 999px;
   line-height: 1.6;
+  white-space: nowrap;
 }
 
 .status-badge--green { background: var(--color-green-bg); color: var(--color-green); }

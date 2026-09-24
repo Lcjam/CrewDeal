@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 캠페인 승인</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지 전용 — 공통 style.css에는 아직 없는 필터 칩·상세 패널. 여러 화면이 같은
+       모양을 필요로 하면(캠페인/정산/대사 모두 상태 다중선택 칩을 쓴다) 공통화 후보. */
+    .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+      border: 1px solid var(--color-border); border-radius: 999px; padding: 5px 12px;
+      background: var(--color-surface); cursor: pointer; user-select: none;
+    }
+    .chip input { width: auto; margin: 0; }
+    .detail-panel {
+      background: var(--color-surface-alt); border: 1px solid var(--color-border);
+      border-radius: var(--radius); padding: var(--spacing-3); margin: var(--spacing-2) 0;
+    }
+    .detail-panel + .detail-panel { margin-top: var(--spacing-3); }
+    .detail-panel textarea { font-family: inherit; resize: vertical; }
+    .preview-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: var(--spacing-2) 0; }
+    .preview-dl dt { color: var(--color-text-muted); }
+    .preview-dl dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .quick-links { font-size: 12px; margin-top: 6px; }
+    .quick-links a { margin-right: 4px; }
+    td.actions-cell { min-width: 240px; }
+    td.actions-cell .btn { margin: 0 4px 4px 0; }
+    .row-name .muted { margin-top: 2px; }
+    .muted { color: var(--color-text-muted); font-size: 12px; }
+    /* 표만 가로 스크롤되게 감싼다 — 헤더·필터는 화면 폭에 그대로 고정된다 (모바일 390px 대응). */
+    .table-scroll { overflow-x: auto; }
+    .table-scroll table { min-width: 900px; }
+  </style>
+</head>
+<body>
+  <div id="console-nav"></div>
+  <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
+    <h1>캠페인 승인</h1>
+
+    <div id="campaigns-notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <div class="card">
+      <h2>상태 필터</h2>
+      <div id="campaigns-filter" class="chip-group" aria-label="캠페인 상태 필터"></div>
+    </div>
+
+    <div id="campaigns-poll-status"></div>
+    <p id="campaigns-limit-notice" class="muted" hidden>최대 100건까지 표시됩니다.</p>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table id="campaigns-table">
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>공급사</th>
+              <th>상품</th>
+              <th>판매가</th>
+              <th>기간</th>
+              <th>인당 한도</th>
+              <th>커미션</th>
+              <th>재고(옵션별)</th>
+              <th>상태</th>
+              <th>조작</th>
+            </tr>
+          </thead>
+          <tbody id="campaigns-tbody">
+            <tr><td colspan="10">불러오는 중…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/console/admin/campaigns.js"></script>
+</body>
+</html>

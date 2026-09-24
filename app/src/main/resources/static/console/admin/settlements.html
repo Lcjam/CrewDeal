@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 정산</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 페이지 전용 — 공통화 후보(보고서 참고): num 정렬·배지 그룹은 다른 목록 화면(payments·ledger)에서도 쓰일 것 */
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .amount--negative { color: var(--color-red); font-weight: 600; }
+    tr.row--recovery { background: var(--color-yellow-bg); }
+    tr.row--recovery:hover { background: var(--color-yellow-bg); filter: brightness(0.96); }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .hint { color: var(--color-text-muted); font-size: 13px; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: var(--spacing-4); align-items: flex-start; }
+    .filter-bar__statuses { display: flex; flex-wrap: wrap; gap: var(--spacing-2) var(--spacing-3); }
+    .filter-bar__statuses label { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 13px; color: var(--color-text); }
+    .filter-bar__statuses input { width: auto; }
+    .run-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--spacing-3); }
+    .run-row .form-row { margin-bottom: 0; min-width: 260px; flex: 1; }
+    .detail-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--spacing-2) var(--spacing-4); margin: 0 0 var(--spacing-4); }
+    .detail-fields-grid > div { display: flex; flex-direction: column; gap: 2px; }
+    .detail-fields-grid dt { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--color-text-muted); }
+    .detail-fields-grid dd { margin: 0; font-size: 14px; }
+    .detail-hold-form:not([hidden]) { display: flex; gap: var(--spacing-2); align-items: center; margin-top: var(--spacing-2); }
+    .detail-hold-form input { flex: 1; }
+    #run-result table, #settlements-table, #detail-items, #timeline-table, #adjustments-table, #run-result { margin-top: var(--spacing-2); }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
+    <h1>정산</h1>
+    <p class="hint">SET-01~03 — 정산 배치 조회, 재시도·보류·해제, 캠페인 정산 실행, 미회수 조정 확인.</p>
+
+    <div id="notice" class="notice" hidden></div>
+
+    <section class="card">
+      <h2>필터</h2>
+      <form id="filter-form" class="filter-bar">
+        <div class="form-row" style="min-width:220px;">
+          <label for="filter-campaign">캠페인</label>
+          <select id="filter-campaign"></select>
+        </div>
+        <div class="form-row">
+          <label>상태 (기본 전체)</label>
+          <div class="filter-bar__statuses">
+            <label><input type="checkbox" data-status-check value="PENDING" checked>대기</label>
+            <label><input type="checkbox" data-status-check value="READY" checked>준비완료</label>
+            <label><input type="checkbox" data-status-check value="PROCESSING" checked>처리중</label>
+            <label><input type="checkbox" data-status-check value="COMPLETED" checked>완료</label>
+            <label><input type="checkbox" data-status-check value="FAILED" checked>실패</label>
+            <label><input type="checkbox" data-status-check value="HELD" checked>보류</label>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>정산 배치 목록</h2>
+      <p class="hint" id="list-limit-note" hidden>최대 100건까지 표시됩니다. 캠페인·상태 필터로 좁혀 보세요.</p>
+      <p class="hint" id="list-stale-hint" hidden>목록 갱신에 실패했습니다 — 마지막으로 불러온 값을 표시 중입니다.</p>
+      <table id="settlements-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>캠페인</th><th>수령주체</th><th>유형</th><th>상태</th>
+            <th>금액</th><th>시도</th><th>결정시각</th><th>완료시각</th><th>보류사유</th><th>실패</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="settlements-body"><tr><td colspan="12">불러오는 중…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="card" id="detail-panel" hidden>
+      <h2>배치 상세 <button type="button" class="btn btn-secondary btn-sm" id="detail-close">닫기</button></h2>
+      <dl class="detail-fields-grid" id="detail-fields"></dl>
+      <div id="detail-actions"></div>
+      <div class="detail-hold-form" id="detail-hold-form" hidden>
+        <label for="detail-hold-reason" style="margin:0;">보류 사유</label>
+        <input type="text" id="detail-hold-reason" value="운영자 보류">
+        <button type="button" class="btn btn-primary btn-sm" id="detail-hold-submit">보류 확정</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="detail-hold-cancel">취소</button>
+      </div>
+
+      <h3>정산 항목</h3>
+      <table id="detail-items">
+        <thead><tr><th>주문 ID</th><th>주문항목 ID</th><th>금액</th></tr></thead>
+        <tbody id="detail-items-body"></tbody>
+        <tfoot id="detail-items-foot"></tfoot>
+      </table>
+
+      <h3>진행 이력</h3>
+      <table id="timeline-table">
+        <thead><tr><th>시각</th><th>상태</th><th>요청 ID</th></tr></thead>
+        <tbody id="timeline-body"></tbody>
+      </table>
+      <div id="detail-timeout-area"></div>
+    </section>
+
+    <section class="card">
+      <h2>정산 실행</h2>
+      <p class="hint">캠페인이 <code>CLOSED</code>·<code>SETTLING</code> 상태일 때 수동으로 정산을 실행합니다. 정산 스케줄러가 10초마다 자동으로도 실행하며, 같은 캠페인을 두 번 실행해도 안전합니다 (S6).</p>
+      <div class="run-row">
+        <div class="form-row">
+          <label for="run-campaign">캠페인</label>
+          <select id="run-campaign"></select>
+        </div>
+        <button type="button" class="btn btn-primary" id="run-button">정산 실행</button>
+      </div>
+      <p class="hint" id="run-empty" hidden>CLOSED·SETTLING 상태인 캠페인이 없습니다.</p>
+      <div id="run-result" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>미회수 조정 <span class="hint">(SET-03)</span></h2>
+      <table id="adjustments-table">
+        <thead><tr><th>ID</th><th>캠페인</th><th>수령주체</th><th>수령자</th><th>배치</th><th>환불 ID</th><th>금액</th><th>발생시각</th></tr></thead>
+        <tbody id="adjustments-body"><tr><td colspan="8">불러오는 중…</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script type="module">
+    import { bootAdmin } from '/console/admin/admin.js';
+    import { initSettlementsPage } from '/console/admin/settlements.js';
+    const user = await bootAdmin();
+    if (user) { await initSettlementsPage(); }
+  </script>
+</body></html>

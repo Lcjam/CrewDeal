@@ -5,25 +5,80 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GroupDrop 콘솔 — 운영 요약</title>
   <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지 전용 카드 그리드 — 캠페인/이벤트 화면의 요약 카드(summary-card)와는 결이 달라
+       (여긴 목록형 위젯) 별도로 둔다. 여러 화면이 비슷한 "다음 확인할 항목" 위젯을 쓰게 되면
+       공통화 후보. */
+    .watch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+    }
+    .watch-item h3 { margin-bottom: var(--spacing-2); }
+    .watch-list { list-style: none; margin: 0 0 var(--spacing-2); padding: 0; font-size: 13px; }
+    .watch-list li { padding: 4px 0; border-bottom: 1px solid var(--color-border); }
+    .watch-list li:last-child { border-bottom: none; }
+    .watch-item .count-line { font-size: 15px; margin-bottom: var(--spacing-2); }
+    .watch-item .count-line strong { font-variant-numeric: tabular-nums; font-size: 18px; }
+    .watch-item a.more-link { font-size: 12px; }
+    .legacy-note code { background: var(--color-surface-alt); padding: 1px 4px; border-radius: 3px; }
+  </style>
 </head>
 <body>
   <div id="console-nav"></div>
   <main>
+    <section id="admin-summary" aria-label="운영 요약"></section>
     <h1>운영 요약</h1>
-    <p>이 화면은 다음 단계에서 구현됩니다.</p>
+
+    <div id="dashboard-notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <section class="card">
+      <h2>지금 확인할 것</h2>
+      <div class="watch-grid">
+        <div class="watch-item">
+          <h3>확정 대기 결제 (UNKNOWN) — 오래된 순 상위 5건</h3>
+          <div id="dashboard-unknown-payments">불러오는 중…</div>
+          <a class="more-link" href="/console/admin/payments.html">결제 화면에서 전체 보기 →</a>
+        </div>
+
+        <div class="watch-item">
+          <h3>승인 대기 캠페인 (REVIEWING)</h3>
+          <p id="dashboard-reviewing" class="count-line">불러오는 중…</p>
+          <a class="more-link" href="/console/admin/campaigns.html">캠페인 승인 화면으로 →</a>
+        </div>
+
+        <div class="watch-item">
+          <h3>막힌 정산 배치 (HELD·FAILED)</h3>
+          <div id="dashboard-settlements">불러오는 중…</div>
+          <a class="more-link" href="/console/admin/settlements.html">정산 화면에서 전체 보기 →</a>
+        </div>
+
+        <div class="watch-item">
+          <h3>OPEN 대사 불일치</h3>
+          <p id="dashboard-discrepancies" class="count-line">불러오는 중…</p>
+          <a class="more-link" href="/console/admin/reconciliation.html">대사 화면으로 →</a>
+        </div>
+
+        <div class="watch-item">
+          <h3>최근 대사 실행</h3>
+          <p id="dashboard-recon-run" class="count-line">불러오는 중…</p>
+          <a class="more-link" href="/console/admin/reconciliation.html">대사 화면으로 →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card legacy-note">
+      <h2>예전 운영 콘솔</h2>
+      <p>
+        이 새 화면들(캠페인 승인·결제·원장·정산·대사·이벤트)이 <code>/admin/index.html</code>의 기능을
+        전부 대체합니다 — 결제 ID·정산 배치 ID를 손으로 입력할 필요 없이 목록에서 바로 조작합니다.
+        예전 콘솔은 더 이상 쓰지 않아도 됩니다.
+      </p>
+      <a href="/admin/index.html">예전 콘솔 열기 (레거시)</a>
+    </section>
   </main>
 
-  <script type="module">
-    import { requireRole } from '/console/common/session.js';
-    import { mountNav } from '/console/common/nav.js';
-
-    async function init() {
-      const user = await requireRole('ADMIN');
-      if (!user) return;
-      mountNav(user);
-    }
-
-    init();
-  </script>
+  <script type="module" src="/console/admin/dashboard.js"></script>
 </body>
 </html>
