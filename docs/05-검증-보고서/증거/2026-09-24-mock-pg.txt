@@ -1,0 +1,18 @@
+source_commit=5512a4d9cdf2c5d0ae21a8de622570beb089dbfc
+stage=mock-pg
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-09-24T15:01:10.729+09:00  INFO 12289 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-24T15:01:10.731+09:00  INFO 12289 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-24T15:01:10.743+09:00  INFO 12289 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-24T15:01:10.744+09:00  INFO 12289 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+> Task :test
+
+BUILD SUCCESSFUL in 6s
+4 actionable tasks: 4 executed
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html

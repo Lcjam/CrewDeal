@@ -1,0 +1,201 @@
+source_commit=5512a4d9cdf2c5d0ae21a8de622570beb089dbfc
+stage=refund-e2e
+ Image groupdrop-mock-pg:local Building 
+ Image groupdrop-app:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 971B done
+#1 DONE 0.0s
+
+#2 [mock-pg internal] load build definition from Dockerfile
+#2 transferring dockerfile: 509B done
+#2 DONE 0.0s
+
+#3 [app internal] load build definition from Dockerfile
+#3 transferring dockerfile: 509B done
+#3 DONE 0.0s
+
+#4 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
+#4 DONE 0.7s
+
+#5 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#5 DONE 0.7s
+
+#6 [app internal] load .dockerignore
+#6 transferring context: 80B done
+#6 DONE 0.0s
+
+#7 [mock-pg internal] load .dockerignore
+#7 transferring context: 80B done
+#7 DONE 0.0s
+
+#8 [mock-pg stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
+#8 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f 0.0s done
+#8 DONE 0.0s
+
+#9 [app build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
+#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438 0.0s done
+#9 DONE 0.0s
+
+#10 [mock-pg internal] load build context
+#10 transferring context: 2.56kB done
+#10 DONE 0.0s
+
+#11 [mock-pg build 6/7] COPY src ./src
+#11 CACHED
+
+#12 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#12 CACHED
+
+#13 [mock-pg build 4/7] COPY gradle ./gradle
+#13 CACHED
+
+#14 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#14 CACHED
+
+#15 [mock-pg build 5/7] RUN chmod +x gradlew
+#15 CACHED
+
+#16 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#16 CACHED
+
+#17 [app internal] load build context
+#17 transferring context: 19.34kB 0.0s done
+#17 DONE 0.0s
+
+#18 [app build 2/7] WORKDIR /workspace
+#18 CACHED
+
+#19 [app build 7/7] RUN ./gradlew --no-daemon bootJar
+#19 CACHED
+
+#20 [app build 4/7] COPY gradle ./gradle
+#20 CACHED
+
+#21 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#21 CACHED
+
+#22 [app build 6/7] COPY src ./src
+#22 CACHED
+
+#23 [app build 5/7] RUN chmod +x gradlew
+#23 CACHED
+
+#24 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#24 CACHED
+
+#25 [app stage-1 3/4] WORKDIR /app
+#25 CACHED
+
+#26 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#26 CACHED
+
+#27 [app] exporting to image
+#27 exporting layers done
+#27 exporting manifest sha256:fed942e82de599bf13aef7946179f81faea249d5421c2f418096d657b8e3ca94 0.0s done
+#27 exporting config sha256:d88dcccb075aa253a59653b8b152583470cbb5b63d7e62ad91e567d7754e1c49 0.0s done
+#27 exporting attestation manifest sha256:f337f7e5ac17d4b9b0466868a32954025f2490caa5e42655a191db390b0b9413 0.0s done
+#27 exporting manifest list sha256:090538d6122a7d8816d8e921efa58575df14b400e0be79ef7c4fec02c52f7f92 0.0s done
+#27 naming to docker.io/library/groupdrop-app:local done
+#27 unpacking to docker.io/library/groupdrop-app:local done
+#27 DONE 0.2s
+
+#28 [mock-pg] exporting to image
+#28 exporting layers done
+#28 exporting manifest sha256:45a33881eeaacf1d257047e641d1f292887401fe8ce1a78b067ed21a908716d8 done
+#28 exporting config sha256:048c211ccc894e47893d410eed2db2fa3b0b829431fb70df68a02744817b32bc done
+#28 exporting attestation manifest sha256:ca6a3f47b3794f100e8cc28ef0687c6cb3feac171adabc7b37e14f2f86edb512 0.0s done
+#28 exporting manifest list sha256:d371a534ae01613bf13b99917a5b368d49135a1c28225de4613d3e7d596f9a5a 0.0s done
+#28 naming to docker.io/library/groupdrop-mock-pg:local done
+#28 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#28 DONE 0.1s
+
+#29 [mock-pg] resolving provenance for metadata file
+#29 DONE 0.0s
+
+#30 [app] resolving provenance for metadata file
+#30 DONE 0.0s
+ Image groupdrop-mock-pg:local Built 
+ Image groupdrop-app:local Built 
+ Network groupdrop-week6-refund_default Creating 
+ Network groupdrop-week6-refund_default Creating 
+ Volume groupdrop-week6-refund_pgdata Creating 
+ Volume groupdrop-week6-refund_pgdata Creating 
+ Volume groupdrop-week6-refund_pgdata Created 
+ Volume groupdrop-week6-refund_pgdata Created 
+ Network groupdrop-week6-refund_default Created 
+ Network groupdrop-week6-refund_default Created 
+ Container groupdrop-week6-refund-postgres-1 Creating 
+ Container groupdrop-week6-refund-mock-pg-1 Creating 
+ Container groupdrop-week6-refund-mock-pg-1 Created 
+ Container groupdrop-week6-refund-postgres-1 Created 
+ Container groupdrop-week6-refund-app-1 Creating 
+ Container groupdrop-week6-refund-app-1 Created 
+ Container groupdrop-week6-refund-mock-pg-1 Starting 
+ Container groupdrop-week6-refund-postgres-1 Starting 
+ Container groupdrop-week6-refund-mock-pg-1 Started 
+ Container groupdrop-week6-refund-postgres-1 Started 
+ Container groupdrop-week6-refund-postgres-1 Waiting 
+ Container groupdrop-week6-refund-postgres-1 Healthy 
+ Container groupdrop-week6-refund-app-1 Starting 
+ Container groupdrop-week6-refund-app-1 Started 
+== 0. 가상 PG 정상 모드 ==
+== 1. 캠페인 준비 (공구가 19,900 × 수수료율 7.5% — 나누어떨어지지 않는 금액, 3.3) ==
+== 2. 정상 결제 → LED-02 분개 확인 ==
+  OK  주문 1 PAID: PAID
+  OK  결제 원장 거래 1건: 1
+  결제 분개:
+        code        |  side  | amount 
+--------------------+--------+--------
+ PG_RECEIVABLE      | DEBIT  |  19900
+ SUPPLIER_PAYABLE   | CREDIT |   1000
+ INFLUENCER_PAYABLE | CREDIT |   1492
+ PG_FEE_PAYABLE     | CREDIT |    597
+ PLATFORM_REVENUE   | CREDIT |  16811
+(5 rows)
+
+== 3. 운영자 환불 (REF-02) — 202 접수 후 워커가 PG를 호출한다 ==
+  OK  환불 1 COMPLETED: COMPLETED
+  OK  결제 1 REFUNDED: REFUNDED
+  OK  주문 1 REFUNDED: REFUNDED
+  OK  환불 역분개 1건 (LED-03): 1
+== 4. 환불 성공 후 응답 유실 (17.4) — REQUESTED 유지 후 재시도로 해소 ==
+  OK  주문 2 PAID: PAID
+  OK  환불 2 COMPLETED (재시도 해소): COMPLETED
+  OK  결제 2 REFUNDED: REFUNDED
+  OK  환불 2 역분개 (LED-03): 1
+  이번 실행의 PG 환불 실제 실행 2건 (수신 누적 3회)
+== 5. S5 원장 균형 검증 ==
+  OK  불균형 거래 0건
+  캠페인 계정 잔액 (환불 2건이 결제 2건을 소거해 전부 0이어야 한다):
+        code        | balance 
+--------------------+---------
+ INFLUENCER_PAYABLE |       0
+ PG_FEE_PAYABLE     |       0
+ PG_RECEIVABLE      |       0
+ PLATFORM_REVENUE   |       0
+ SUPPLIER_PAYABLE   |       0
+(5 rows)
+
+  OK  전 계정 잔액 0
+== 6. 환불 지표 노출 ==
+refund_completed_total{kind="standard"} 2.0
+refund_pg_duration_seconds_count 3
+refund_requested_total{source="admin"} 2.0
+
+PASS: 4주차 환불·원장 실증 완료
+ Container groupdrop-week6-refund-app-1 Stopping 
+ Container groupdrop-week6-refund-mock-pg-1 Stopping 
+ Container groupdrop-week6-refund-mock-pg-1 Stopped 
+ Container groupdrop-week6-refund-mock-pg-1 Removing 
+ Container groupdrop-week6-refund-mock-pg-1 Removed 
+ Container groupdrop-week6-refund-app-1 Stopped 
+ Container groupdrop-week6-refund-app-1 Removing 
+ Container groupdrop-week6-refund-app-1 Removed 
+ Container groupdrop-week6-refund-postgres-1 Stopping 
+ Container groupdrop-week6-refund-postgres-1 Stopped 
+ Container groupdrop-week6-refund-postgres-1 Removing 
+ Container groupdrop-week6-refund-postgres-1 Removed 
+ Volume groupdrop-week6-refund_pgdata Removing 
+ Network groupdrop-week6-refund_default Removing 
+ Volume groupdrop-week6-refund_pgdata Removed 
+ Network groupdrop-week6-refund_default Removed 
