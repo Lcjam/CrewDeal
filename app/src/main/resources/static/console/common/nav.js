@@ -10,10 +10,10 @@ import { logout, homeFor } from './session.js';
 // 렌더링하지 않는다 — 이후 단계에서 페이지가 생기면 이 플래그만 뒤집는다.
 const MENUS = {
   BUYER: [
+    // 캠페인 상세(campaign.html?id=)·결제(payment.html?orderId=)는 ID가 필요해 메뉴에 두지 않는다 —
+    // 목록 화면의 링크로만 들어간다.
     { label: '공구 목록', href: '/console/buyer/campaigns.html', ready: true },
-    { label: '캠페인 상세', href: '/console/buyer/campaign.html', ready: false },
-    { label: '내 주문', href: '/console/buyer/orders.html', ready: false },
-    { label: '결제', href: '/console/buyer/payment.html', ready: false },
+    { label: '내 주문', href: '/console/buyer/orders.html', ready: true },
     { label: '장애 주입 데모', href: '/console/demo/index.html', ready: false },
   ],
   INFLUENCER: [

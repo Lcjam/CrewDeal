@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 공구 상세</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .camp-meta { display: flex; flex-wrap: wrap; gap: var(--spacing-4); margin-bottom: var(--spacing-3); }
+    .camp-meta__item { min-width: 140px; }
+    .camp-meta__label { font-size: 12px; color: var(--color-text-muted); margin-bottom: 2px; }
+    .camp-meta__value { font-size: 16px; font-weight: 600; }
+    .camp-meta__value--period { font-size: 13px; font-weight: 400; }
+    .camp-sku-row { display: grid; grid-template-columns: 1fr 110px 120px; gap: var(--spacing-3); align-items: center; padding: var(--spacing-2) 0; border-bottom: 1px solid var(--color-border); }
+    .camp-sku-row label { margin: 0; }
+    .camp-sku-row__available { font-size: 12px; color: var(--color-text-muted); text-align: right; }
+    .camp-order-actions { display: flex; align-items: center; gap: var(--spacing-3); margin-top: var(--spacing-3); flex-wrap: wrap; }
+    .camp-order-summary { font-size: 13px; color: var(--color-text-muted); }
+    .camp-order-summary--over { color: var(--color-red); font-weight: 600; }
+    #camp-poll-error:empty, #camp-status-reason:empty, #camp-order-notice:empty { display: none; }
+  </style>
+</head>
+<body>
+  <div id="console-nav"></div>
+  <main>
+    <p><a href="/console/buyer/campaigns.html">← 공구 목록</a></p>
+    <div id="camp-error"></div>
+    <div id="camp-body" hidden>
+      <h1 id="camp-name"></h1>
+      <div id="camp-poll-error"></div>
+      <div class="camp-meta">
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">상태</div>
+          <div class="camp-meta__value"><status-badge id="camp-status-badge" domain="campaign"></status-badge></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">딜가</div>
+          <div class="camp-meta__value" id="camp-price"></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">인당 구매 한도</div>
+          <div class="camp-meta__value" id="camp-limit"></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">잔여 구매 가능 수량</div>
+          <div class="camp-meta__value" id="camp-remaining">확인 중…</div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">판매 기간</div>
+          <div class="camp-meta__value camp-meta__value--period" id="camp-period"></div>
+        </div>
+      </div>
+      <div id="camp-status-reason"></div>
+
+      <h2>옵션 선택</h2>
+      <form id="camp-order-form">
+        <div id="camp-sku-list"></div>
+        <div id="camp-order-notice" role="status" aria-live="polite"></div>
+        <div class="camp-order-actions">
+          <button type="submit" class="btn btn-primary" id="camp-submit-btn" disabled>주문하기</button>
+          <span class="camp-order-summary" id="camp-order-summary"></span>
+        </div>
+      </form>
+    </div>
+  </main>
+  <script type="module">
+    import { bootBuyer } from '/console/buyer/buyer.js';
+    import { initCampaignPage } from '/console/buyer/campaign.js';
+    const user = await bootBuyer();
+    if (user) { initCampaignPage(user); }
+  </script>
+</body>
+</html>
