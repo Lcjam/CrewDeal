@@ -1,4 +1,4 @@
-source_commit=4a6982b2ae0e4863717b82608dd0d6704ade70b2-dirty
+source_commit=fee7e6eecd60d8a536ef4e818ce40af7e5e706e6-dirty
 stage=s2
 == S2: 동일 멱등 키 동시 결제 ==
 > Task :compileJava
@@ -12,13 +12,13 @@ Note: Recompile with -Xlint:unchecked for details.
 > Task :processTestResources NO-SOURCE
 > Task :testClasses
 OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
-2026-09-25T16:51:40.920+09:00  INFO 51731 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-09-25T16:51:40.922+09:00  INFO 51731 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
-2026-09-25T16:51:40.926+09:00  INFO 51731 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-09-25T23:19:23.980+09:00  INFO 85926 --- [groupdrop] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-09-25T23:19:23.981+09:00  INFO 85926 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-09-25T23:19:23.987+09:00  INFO 85926 --- [groupdrop] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
 > Task :test
 
 [Incubating] Problems report is available at: file:///home/lcj/code/CrewDeal/app/build/reports/problems/problems-report.html
 
-BUILD SUCCESSFUL in 15s
+BUILD SUCCESSFUL in 14s
 4 actionable tasks: 4 executed
 Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.1/userguide/configuration_cache_enabling.html
