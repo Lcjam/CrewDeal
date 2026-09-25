@@ -1,13 +1,13 @@
-source_commit=99e3ece6835c9a8843b6115287d77fb97ce6e713
+source_commit=4a6982b2ae0e4863717b82608dd0d6704ade70b2-dirty
 stage=s1-b
  Image groupdrop-app:local Building 
- Image groupdrop-mock-pg:local Building 
  Image groupdrop-app:local Building 
+ Image groupdrop-mock-pg:local Building 
 #1 [internal] load local bake definitions
 #1 reading from stdin 1.40kB done
 #1 DONE 0.0s
 
-#2 [app internal] load build definition from Dockerfile
+#2 [app2 internal] load build definition from Dockerfile
 #2 transferring dockerfile: 509B done
 #2 DONE 0.0s
 
@@ -16,122 +16,130 @@ stage=s1-b
 #3 DONE 0.0s
 
 #4 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
-#4 ...
-
-#5 [app2 internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
-#5 DONE 0.7s
-
-#4 [app2 internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
 #4 DONE 0.8s
 
-#6 [mock-pg internal] load .dockerignore
+#5 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#5 DONE 0.7s
+
+#6 [app2 internal] load .dockerignore
 #6 transferring context: 80B done
 #6 DONE 0.0s
 
-#7 [app internal] load .dockerignore
+#7 [mock-pg internal] load .dockerignore
 #7 transferring context: 80B done
 #7 DONE 0.0s
 
-#8 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
-#8 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438 0.0s done
+#8 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
+#8 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f 0.0s done
 #8 DONE 0.0s
 
-#9 [app2 stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
-#9 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f 0.0s done
+#9 [app build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
+#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438 0.0s done
 #9 DONE 0.0s
 
 #10 [mock-pg internal] load build context
 #10 transferring context: 2.56kB done
 #10 DONE 0.0s
 
-#11 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#11 [mock-pg build 5/7] RUN chmod +x gradlew
 #11 CACHED
 
-#12 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#12 [mock-pg build 2/7] WORKDIR /workspace
 #12 CACHED
 
-#13 [mock-pg build 6/7] COPY src ./src
+#13 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
 #13 CACHED
 
-#14 [mock-pg build 4/7] COPY gradle ./gradle
+#14 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
 #14 CACHED
 
-#15 [mock-pg build 5/7] RUN chmod +x gradlew
+#15 [mock-pg build 4/7] COPY gradle ./gradle
 #15 CACHED
 
-#16 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#16 [mock-pg stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
 #16 CACHED
 
-#17 [app internal] load build context
-#17 transferring context: 19.90kB 0.0s done
-#17 DONE 0.0s
+#17 [mock-pg stage-1 3/4] WORKDIR /app
+#17 CACHED
 
-#18 [app build 2/7] WORKDIR /workspace
+#18 [mock-pg build 6/7] COPY src ./src
 #18 CACHED
 
-#19 [app stage-1 3/4] WORKDIR /app
+#19 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
 #19 CACHED
 
-#20 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
-#20 CACHED
+#20 [mock-pg] exporting to image
+#20 exporting layers done
+#20 ...
 
-#21 [app build 7/7] RUN ./gradlew --no-daemon bootJar
-#21 CACHED
+#21 [app2 internal] load build context
+#21 transferring context: 20.83kB 0.0s done
+#21 DONE 0.0s
 
-#22 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#22 [app build 4/7] COPY gradle ./gradle
 #22 CACHED
 
-#23 [app build 4/7] COPY gradle ./gradle
+#23 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
 #23 CACHED
 
-#24 [app build 6/7] COPY src ./src
+#24 [app build 5/7] RUN chmod +x gradlew
 #24 CACHED
 
-#25 [app build 5/7] RUN chmod +x gradlew
+#25 [app build 6/7] COPY src ./src
 #25 CACHED
 
-#26 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#16 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#16 CACHED
+
+#12 [app build 2/7] WORKDIR /workspace
+#12 CACHED
+
+#17 [app stage-1 3/4] WORKDIR /app
+#17 CACHED
+
+#26 [app build 7/7] RUN ./gradlew --no-daemon bootJar
 #26 CACHED
 
-#27 [app] exporting to image
-#27 exporting layers done
-#27 exporting manifest sha256:257b38d92930e3132826e0d6ab0cef6da16d5cd7e8b27556a48b82c81c750b82 0.0s done
-#27 exporting config sha256:ec935b81b8b66f8dca1d06e07ad536d3522f8523e63033300bb4a3d6ddbd1243
-#27 exporting config sha256:ec935b81b8b66f8dca1d06e07ad536d3522f8523e63033300bb4a3d6ddbd1243 0.0s done
-#27 exporting attestation manifest sha256:229c4c05677b0f485df1f70d4405b966d76afc9eb000a5149e374ba7b5f550e7 0.0s done
-#27 exporting manifest list sha256:f03d7dc34ec80073d12625388ff761dd7e9572fedd35fc48607215a4867d2477 0.0s done
-#27 naming to docker.io/library/groupdrop-app:local done
-#27 unpacking to docker.io/library/groupdrop-app:local
-#27 unpacking to docker.io/library/groupdrop-app:local done
-#27 DONE 0.1s
+#27 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#27 CACHED
 
-#28 [mock-pg] exporting to image
+#20 [mock-pg] exporting to image
+#20 exporting manifest sha256:3ff7fbd06d9eeda395de97bd7e23cb46d5839e8d5490b4f00f00a0210aa3a7f2 done
+#20 exporting config sha256:8deb868ed96c38ddd0e83c08ddf411ea35506882f73fb0c231cc51bc223868eb done
+#20 exporting attestation manifest sha256:81628b6c211c3bd2b357326c98baaa5b714eca50c8498e518524f76a09e9fa7d 0.0s done
+#20 exporting manifest list sha256:6fd13fcb4ecb8038b8b261a7df15a5526c0d926e5f905470ff683978e52601a3 0.0s done
+#20 naming to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#20 unpacking to docker.io/library/groupdrop-mock-pg:local
+#20 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#20 DONE 0.2s
+
+#28 [app2] exporting to image
 #28 exporting layers done
-#28 exporting manifest sha256:3ff7fbd06d9eeda395de97bd7e23cb46d5839e8d5490b4f00f00a0210aa3a7f2 done
-#28 exporting config sha256:8deb868ed96c38ddd0e83c08ddf411ea35506882f73fb0c231cc51bc223868eb done
-#28 exporting attestation manifest sha256:6c3eba4fab962ea575b424962f639b04a671bea6d6e6251d32e33653ba27926b 0.0s done
-#28 exporting manifest list sha256:ded2dadcf3f107b59e843e219ae3d89bc8aeb1d6d664db7004b9b602208b22b8 0.0s done
-#28 naming to docker.io/library/groupdrop-mock-pg:local 0.0s done
-#28 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#28 exporting manifest sha256:cfff8a8b24d3687b33e087e0690303f914713cef5125abd3667be04de4dec218 0.0s done
+#28 exporting config sha256:edf19c14ef3d316f6875eef3602ffcb2540daad9b5e72d473632cb69893263b5 0.0s done
+#28 exporting attestation manifest sha256:0d97a65ce54c104e29ac5c6046dc847795f4dbe3053e19055c6d58f4d1663099 0.0s done
+#28 exporting manifest list sha256:afed41d4fb6980ef90e46d4f66768a776556ea36e4000eabf31729f5faefe3f0 0.0s done
+#28 naming to docker.io/library/groupdrop-app:local done
+#28 unpacking to docker.io/library/groupdrop-app:local 0.0s done
 #28 DONE 0.2s
 
-#29 [app2] exporting to image
+#29 [app] exporting to image
 #29 exporting layers done
-#29 exporting manifest sha256:c8c6f4e84f4801896e283ba41a0d9e66464e1f70c50c1245fc0af8a5cb74fd11 0.0s done
-#29 exporting config sha256:8cec48cdaa4d618946b048c6587413d8cf668c1b681bf393f266d323f5fe1861 0.0s done
-#29 exporting attestation manifest sha256:46e98efa511a7a1129de6417b49b772be51137db8b7b42f772751d7d4e338340 0.0s done
-#29 exporting manifest list sha256:940fbe437bd5c9f1fc2fb8e4b05a7370363b005315d2a9431c2f4209b0e1c9fe 0.0s done
+#29 exporting manifest sha256:b3cabff648f01750205fc08833b54fbfc8d4cf4aeebc25e158f33e007eb46b65 0.0s done
+#29 exporting config sha256:c9d1fe0beb0fc0d9715688096d676816fb8886d48df113a81a131dd932ba1235 0.0s done
+#29 exporting attestation manifest sha256:455cc9c5b6f884cbf53b7e176cff70b003042e8981f810f2c77f5926bf61482c 0.0s done
+#29 exporting manifest list sha256:4a936175c16cd955ee89e66cd6c779f76b433a54faef27f21acf4f1817e57d60 0.0s done
 #29 naming to docker.io/library/groupdrop-app:local done
 #29 unpacking to docker.io/library/groupdrop-app:local 0.0s done
 #29 DONE 0.2s
 
-#30 [app] resolving provenance for metadata file
+#30 [app2] resolving provenance for metadata file
 #30 DONE 0.1s
 
 #31 [mock-pg] resolving provenance for metadata file
-#31 DONE 0.1s
+#31 DONE 0.0s
 
-#32 [app2] resolving provenance for metadata file
+#32 [app] resolving provenance for metadata file
 #32 DONE 0.0s
  Image groupdrop-app:local Built 
  Image groupdrop-app:local Built 
@@ -152,18 +160,18 @@ stage=s1-b
  Container groupdrop-week6-s1b-app-1 Creating 
  Container groupdrop-week6-s1b-app-1 Created 
  Container groupdrop-week6-s1b-app2-1 Created 
- Container groupdrop-week6-s1b-postgres-1 Starting 
  Container groupdrop-week6-s1b-mock-pg-1 Starting 
+ Container groupdrop-week6-s1b-postgres-1 Starting 
+ Container groupdrop-week6-s1b-mock-pg-1 Started 
  Container groupdrop-week6-s1b-postgres-1 Started 
  Container groupdrop-week6-s1b-postgres-1 Waiting 
  Container groupdrop-week6-s1b-postgres-1 Waiting 
- Container groupdrop-week6-s1b-mock-pg-1 Started 
- Container groupdrop-week6-s1b-postgres-1 Healthy 
- Container groupdrop-week6-s1b-app-1 Starting 
  Container groupdrop-week6-s1b-postgres-1 Healthy 
  Container groupdrop-week6-s1b-app2-1 Starting 
- Container groupdrop-week6-s1b-app-1 Started 
+ Container groupdrop-week6-s1b-postgres-1 Healthy 
+ Container groupdrop-week6-s1b-app-1 Starting 
  Container groupdrop-week6-s1b-app2-1 Started 
+ Container groupdrop-week6-s1b-app-1 Started 
 == 1. S1-b fixture: 구매자 200명, 재고 100, 구매 제한 10 ==
 INSERT 0 200
  s1a_buyer_count 
@@ -225,44 +233,47 @@ s1b    [   0% ]
 Run    [ 100% ] setup()
 s1b    [   0% ]
 
-running (0m12.0s), 200/200 VUs, 0 complete and 0 interrupted iterations
-s1b    [   0% ] 200 VUs  00.1s/30s  0000/1000 iters, 5 per VU
+Run    [ 100% ] setup()
+s1b    [   0% ]
 
-running (0m13.0s), 200/200 VUs, 227 complete and 0 interrupted iterations
-s1b    [  23% ] 200 VUs  01.1s/30s  0227/1000 iters, 5 per VU
+running (0m13.0s), 200/200 VUs, 29 complete and 0 interrupted iterations
+s1b    [   3% ] 200 VUs  00.5s/30s  0029/1000 iters, 5 per VU
 
-running (0m14.0s), 092/200 VUs, 839 complete and 0 interrupted iterations
-s1b    [  84% ] 200 VUs  02.1s/30s  0839/1000 iters, 5 per VU
+running (0m14.0s), 199/200 VUs, 330 complete and 0 interrupted iterations
+s1b    [  33% ] 200 VUs  01.5s/30s  0330/1000 iters, 5 per VU
+
+running (0m15.0s), 036/200 VUs, 951 complete and 0 interrupted iterations
+s1b    [  95% ] 200 VUs  02.5s/30s  0951/1000 iters, 5 per VU
 
      ✓ 201 success or inventory sold out
 
      checks.........................: 100.00% 1000 out of 1000
-     data_received..................: 641 kB  45 kB/s
-     data_sent......................: 337 kB  24 kB/s
-     http_req_blocked...............: avg=5.97ms   min=1.86µs  med=5.71µs   max=93.16ms p(90)=26.32ms  p(95)=48.83ms  p(99)=71.26ms
-     http_req_connecting............: avg=4.57ms   min=0s      med=0s       max=93.06ms p(90)=16.15ms  p(95)=29.58ms  p(99)=55.51ms
-     http_req_duration..............: avg=335.59ms min=10.61ms med=256.41ms max=1.81s   p(90)=825.45ms p(95)=904.6ms  p(99)=1.29s  
-       { expected_response:true }...: avg=335.59ms min=10.61ms med=256.41ms max=1.81s   p(90)=825.45ms p(95)=904.6ms  p(99)=1.29s  
+     data_received..................: 641 kB  43 kB/s
+     data_sent......................: 337 kB  22 kB/s
+     http_req_blocked...............: avg=5.01ms   min=1.92µs  med=6.46µs   max=90.36ms p(90)=16.91ms  p(95)=36.28ms p(99)=70ms   
+     http_req_connecting............: avg=4.86ms   min=0s      med=0s       max=90.24ms p(90)=16.6ms   p(95)=30.95ms p(99)=69.9ms 
+     http_req_duration..............: avg=384.96ms min=11.91ms med=280.66ms max=2.12s   p(90)=964.71ms p(95)=1.1s    p(99)=1.46s  
+       { expected_response:true }...: avg=384.96ms min=11.91ms med=280.66ms max=2.12s   p(90)=964.71ms p(95)=1.1s    p(99)=1.46s  
      http_req_failed................: 0.00%   0 out of 1200
-     http_req_receiving.............: avg=1.56ms   min=25.86µs med=251.13µs max=31.53ms p(90)=4.37ms   p(95)=7.85ms   p(99)=20.68ms
-     http_req_sending...............: avg=2.86ms   min=9.45µs  med=30.89µs  max=77.43ms p(90)=343.19µs p(95)=39.92ms  p(99)=47.35ms
-     http_req_tls_handshaking.......: avg=0s       min=0s      med=0s       max=0s      p(90)=0s       p(95)=0s       p(99)=0s     
-     http_req_waiting...............: avg=331.16ms min=10.51ms med=255.76ms max=1.76s   p(90)=821.61ms p(95)=883.63ms p(99)=1.28s  
-     http_reqs......................: 1200    84.607759/s
-     iteration_duration.............: avg=398.99ms min=10.86ms med=341.12ms max=1.83s   p(90)=885.89ms p(95)=955.1ms  p(99)=1.34s  
-     iterations.....................: 1000    70.506466/s
-   ✓ order_app1_attempts............: 500     35.253233/s
-   ✓ order_app2_attempts............: 500     35.253233/s
-   ✓ order_attempts.................: 1000    70.506466/s
+     http_req_receiving.............: avg=1.66ms   min=31.07µs med=351.54µs max=55.97ms p(90)=4.43ms   p(95)=8.18ms  p(99)=15.31ms
+     http_req_sending...............: avg=479.22µs min=12.16µs med=36.92µs  max=24.15ms p(90)=571.87µs p(95)=1.5ms   p(99)=13.17ms
+     http_req_tls_handshaking.......: avg=0s       min=0s      med=0s       max=0s      p(90)=0s       p(95)=0s      p(99)=0s     
+     http_req_waiting...............: avg=382.81ms min=11.77ms med=278.83ms max=2.12s   p(90)=963.51ms p(95)=1.1s    p(99)=1.45s  
+     http_reqs......................: 1200    79.787968/s
+     iteration_duration.............: avg=456.2ms  min=12.25ms med=396.92ms max=2.18s   p(90)=1.05s    p(95)=1.18s   p(99)=1.49s  
+     iterations.....................: 1000    66.489974/s
+   ✓ order_app1_attempts............: 500     33.244987/s
+   ✓ order_app2_attempts............: 500     33.244987/s
+   ✓ order_attempts.................: 1000    66.489974/s
    ✓ order_server_errors............: 0.00%   0 out of 1000
-   ✓ order_sold_out.................: 900     63.45582/s
-   ✓ order_successes................: 100     7.050647/s
-     vus............................: 94      min=0            max=200
+   ✓ order_sold_out.................: 900     59.840976/s
+   ✓ order_successes................: 100     6.648997/s
+     vus............................: 36      min=0            max=200
      vus_max........................: 200     min=200          max=200
 
 
-running (0m14.2s), 000/200 VUs, 1000 complete and 0 interrupted iterations
-s1b  ✓ [ 100% ] 200 VUs  02.3s/30s  1000/1000 iters, 5 per VU
+running (0m15.0s), 000/200 VUs, 1000 complete and 0 interrupted iterations
+s1b  ✓ [ 100% ] 200 VUs  02.6s/30s  1000/1000 iters, 5 per VU
 == 3. 종료 후 SQL: 재고 불변식·성공 주문 정확히 100 ==
  id | initial_quantity | available_quantity | reserved_quantity | sold_quantity 
 ----+------------------+--------------------+-------------------+---------------
@@ -299,18 +310,18 @@ s1b  ✓ [ 100% ] 200 VUs  02.3s/30s  1000/1000 iters, 5 per VU
 (1 row)
 
 S1-b PASS campaign_id=1 product_sku_id=1 app1=http://localhost:58102 app2=http://localhost:58103
+ Container groupdrop-week6-s1b-mock-pg-1 Stopping 
  Container groupdrop-week6-s1b-app2-1 Stopping 
  Container groupdrop-week6-s1b-app-1 Stopping 
- Container groupdrop-week6-s1b-mock-pg-1 Stopping 
  Container groupdrop-week6-s1b-mock-pg-1 Stopped 
  Container groupdrop-week6-s1b-mock-pg-1 Removing 
  Container groupdrop-week6-s1b-mock-pg-1 Removed 
- Container groupdrop-week6-s1b-app2-1 Stopped 
- Container groupdrop-week6-s1b-app2-1 Removing 
- Container groupdrop-week6-s1b-app2-1 Removed 
  Container groupdrop-week6-s1b-app-1 Stopped 
  Container groupdrop-week6-s1b-app-1 Removing 
  Container groupdrop-week6-s1b-app-1 Removed 
+ Container groupdrop-week6-s1b-app2-1 Stopped 
+ Container groupdrop-week6-s1b-app2-1 Removing 
+ Container groupdrop-week6-s1b-app2-1 Removed 
  Container groupdrop-week6-s1b-postgres-1 Stopping 
  Container groupdrop-week6-s1b-postgres-1 Stopped 
  Container groupdrop-week6-s1b-postgres-1 Removing 
