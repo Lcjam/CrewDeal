@@ -17,14 +17,14 @@ const MENUS = {
     { label: '장애 주입 데모', href: '/console/demo/index.html', ready: false },
   ],
   INFLUENCER: [
+    // 캠페인 상세(campaign.html?id=)는 ID가 필요해 메뉴에 두지 않는다 — 내 캠페인 목록의 링크로만 들어간다.
     { label: '내 캠페인', href: '/console/influencer/campaigns.html', ready: true },
-    { label: '캠페인 상세', href: '/console/influencer/campaign.html', ready: false },
-    { label: '정산', href: '/console/influencer/settlements.html', ready: false },
+    { label: '정산', href: '/console/influencer/settlements.html', ready: true },
   ],
   SUPPLIER: [
     { label: '상품', href: '/console/supplier/products.html', ready: true },
-    { label: '참여 캠페인', href: '/console/supplier/campaigns.html', ready: false },
-    { label: '정산', href: '/console/supplier/settlements.html', ready: false },
+    { label: '참여 캠페인', href: '/console/supplier/campaigns.html', ready: true },
+    { label: '정산', href: '/console/supplier/settlements.html', ready: true },
   ],
   ADMIN: [
     { label: '운영 요약', href: '/console/admin/index.html', ready: true },

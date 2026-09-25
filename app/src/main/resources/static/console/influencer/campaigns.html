@@ -5,25 +5,131 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GroupDrop 콘솔 — 내 캠페인</title>
   <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .camp-period { font-size: 12px; color: var(--color-text-muted); white-space: nowrap; }
+    .rejection-reason { font-size: 12px; color: var(--color-red); margin-top: 2px; }
+    tr.row--highlight { background: var(--color-blue-bg); }
+    tr.row--highlight:hover { background: var(--color-blue-bg); filter: brightness(0.97); }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .hint { color: var(--color-text-muted); font-size: 13px; }
+    .muted { color: var(--color-text-muted); }
+    .input-error { color: var(--color-red); }
+
+    .sku-row {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr 1fr 2fr;
+      gap: var(--spacing-3);
+      align-items: start;
+      padding: var(--spacing-2) 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .sku-row__check { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; color: var(--color-text); }
+    .sku-row__check input { width: auto; }
+    .sku-preview { font-size: 12px; }
+    .sku-preview__breakdown { color: var(--color-text-muted); margin-top: 4px; }
+    #f-skus:empty::before { content: ''; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0 var(--spacing-4);
+    }
+  </style>
 </head>
 <body>
   <div id="console-nav"></div>
   <main>
     <h1>내 캠페인</h1>
-    <p>이 화면은 다음 단계에서 구현됩니다.</p>
+    <p class="hint">
+      개설한 캠페인과 상태를 2초마다 확인합니다. 승인 대기·판매 시작·품절 같은 전이는 서버
+      스케줄러가 진행하므로 화면을 가만히 보고 있어도 배지가 바뀝니다 (CAM-03). 반려된 캠페인은
+      <code>DRAFT</code> 상태로 남고 사유가 함께 표시됩니다 — 필요하면 새 캠페인으로 다시 만드세요.
+    </p>
+    <div id="notice" role="status" aria-live="polite"></div>
+
+    <section class="card">
+      <h2>목록</h2>
+      <p class="hint" id="list-stale-hint" hidden>목록 갱신에 실패했습니다 — 마지막으로 불러온 값을 표시 중입니다.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>이름</th><th>상품</th><th>공급사</th><th>딜가</th><th>커미션율</th>
+            <th>판매 기간</th><th>SKU</th><th>상태</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="campaigns-tbody">
+          <tr><td colspan="9">불러오는 중…</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>캠페인 개설 (CAM-01)</h2>
+      <p class="hint">
+        마진 게이트: <code>딜가 × (10000 − 커미션bp − 300) &gt; 공급단가 × 10000</code> 을 SKU마다 만족해야
+        합니다. 아래 미리보기는 서버와 같은 계산식을 그대로 옮긴 참고용이며, 실제 통과 여부는 서버가
+        최종 결정합니다 — 미리보기가 실패해도 제출은 막지 않습니다 (서버 400 <code>CAMPAIGN_MARGIN_GATE_FAILED</code>로 확인).
+      </p>
+      <div id="create-gate-warning" class="notice notice--warning" hidden>
+        선택한 SKU 중 하나 이상이 마진 게이트 미리보기를 통과하지 못했습니다. 그대로 제출하면 서버가
+        400 <code>CAMPAIGN_MARGIN_GATE_FAILED</code>로 거부합니다.
+      </div>
+
+      <form id="create-form">
+        <div class="form-grid">
+          <div class="form-row">
+            <label for="f-product">상품</label>
+            <select id="f-product"><option>불러오는 중…</option></select>
+          </div>
+          <div class="form-row">
+            <label for="f-name">캠페인 이름</label>
+            <input type="text" id="f-name" maxlength="200" required>
+          </div>
+          <div class="form-row">
+            <label for="f-slug">슬러그 (응답을 못 받은 제출이 있으면 확인이 끝날 때까지 잠깁니다)</label>
+            <input type="text" id="f-slug" maxlength="100" pattern="[a-z0-9\-]+" title="소문자, 숫자, 하이픈(-)만 사용할 수 있습니다." required>
+          </div>
+          <div class="form-row">
+            <label for="f-deal-price">딜가 (원)</label>
+            <input type="number" id="f-deal-price" min="1" step="1" inputmode="numeric" required>
+          </div>
+          <div class="form-row">
+            <label for="f-commission">커미션율 (bp) <span id="f-commission-pct" class="hint"></span></label>
+            <input type="number" id="f-commission" min="0" max="10000" step="1" inputmode="numeric" required>
+          </div>
+          <div class="form-row">
+            <label for="f-limit">인당 구매 한도 (개)</label>
+            <input type="number" id="f-limit" min="1" max="2147483647" step="1" inputmode="numeric" required>
+          </div>
+          <div class="form-row">
+            <label for="f-starts">판매 시작 (브라우저 시간대)</label>
+            <input type="datetime-local" id="f-starts" required>
+          </div>
+          <div class="form-row">
+            <label for="f-ends">판매 종료 (브라우저 시간대)</label>
+            <input type="datetime-local" id="f-ends" required>
+          </div>
+        </div>
+
+        <h3>SKU별 배정 수량·공급 단가·미리보기</h3>
+        <p class="hint">
+          수량 1개 주문 기준 — 정산은 주문 총액에 대해 절사(ADR-008)하므로 수량이 늘면 실제 정산액은
+          1원 단위로 달라질 수 있습니다. 공급 단가는 이 화면에서 인플루언서가 직접 입력하는 값이라
+          함께 보여줍니다(평소 대시보드에서는 공급사 정보를 인플루언서에게 노출하지 않습니다).
+        </p>
+        <div id="f-skus"><p class="hint">먼저 상품을 선택하세요.</p></div>
+
+        <div id="create-notice" role="status" aria-live="polite" style="margin-top: var(--spacing-3);"></div>
+        <button type="submit" class="btn btn-primary" id="create-submit" style="margin-top: var(--spacing-2);">캠페인 개설</button>
+      </form>
+    </section>
   </main>
-
   <script type="module">
-    import { requireRole } from '/console/common/session.js';
-    import { mountNav } from '/console/common/nav.js';
-
-    async function init() {
-      const user = await requireRole('INFLUENCER');
-      if (!user) return;
-      mountNav(user);
-    }
-
-    init();
+    import { bootInfluencer } from '/console/influencer/influencer.js';
+    import { initCampaignsPage } from '/console/influencer/campaigns.js';
+    const user = await bootInfluencer();
+    if (user) { await initCampaignsPage(user); }
   </script>
 </body>
 </html>

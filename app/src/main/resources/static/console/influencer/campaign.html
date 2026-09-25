@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 캠페인 상세</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .camp-meta { display: flex; flex-wrap: wrap; gap: var(--spacing-4); margin-bottom: var(--spacing-3); }
+    .camp-meta__item { min-width: 140px; }
+    .camp-meta__label { font-size: 12px; color: var(--color-text-muted); margin-bottom: 2px; }
+    .camp-meta__value { font-size: 16px; font-weight: 600; }
+    .camp-meta__value--period { font-size: 13px; font-weight: 400; }
+    .camp-sku-list__row { display: flex; justify-content: space-between; gap: var(--spacing-3); padding: 4px 0; border-bottom: 1px solid var(--color-border); font-size: 13px; }
+    .hint { color: var(--color-text-muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="console-nav"></div>
+  <main>
+    <p><a href="/console/influencer/campaigns.html">← 내 캠페인</a> · <a id="camp-settlements-link" href="/console/influencer/settlements.html">정산 보기</a></p>
+    <div id="camp-error"></div>
+    <div id="camp-body" hidden>
+      <h1 id="camp-name"></h1>
+      <p class="hint">슬러그: <code id="camp-slug"></code></p>
+      <div class="camp-meta">
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">상태</div>
+          <div class="camp-meta__value"><status-badge id="camp-status-badge" domain="campaign"></status-badge></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">딜가</div>
+          <div class="camp-meta__value" id="camp-price"></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">커미션율</div>
+          <div class="camp-meta__value" id="camp-commission"></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">인당 구매 한도</div>
+          <div class="camp-meta__value" id="camp-limit"></div>
+        </div>
+        <div class="camp-meta__item">
+          <div class="camp-meta__label">판매 기간</div>
+          <div class="camp-meta__value camp-meta__value--period" id="camp-period"></div>
+        </div>
+      </div>
+
+      <h2>SKU 배정</h2>
+      <div id="camp-sku-list"></div>
+
+      <h2 style="margin-top: var(--spacing-5);">정산 대시보드 (LED-01)</h2>
+      <p class="hint">
+        아래 수치는 원장(ledger) 계정 잔액에서 그대로 가져옵니다 — 별도로 다시 계산하지 않습니다.
+        환불된 주문은 LED-03 역분개로 이미 반영되어 있으므로 순매출·예상 커미션에서 따로 빼지 않아도 됩니다.
+      </p>
+      <div id="dash-error"></div>
+      <div id="dash-body" class="summary-grid" hidden>
+        <div class="summary-card">
+          <div class="summary-card__label">정산 대상 주문 수</div>
+          <div class="summary-card__number" id="dash-settled">-</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card__label">환불된 주문 수</div>
+          <div class="summary-card__number" id="dash-refunded">-</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card__label">순매출액</div>
+          <div class="summary-card__number" id="dash-net-sales">-</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card__label">예상 커미션</div>
+          <div class="summary-card__number" id="dash-expected-commission">-</div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script type="module">
+    import { bootInfluencer } from '/console/influencer/influencer.js';
+    import { initCampaignPage } from '/console/influencer/campaign.js';
+    const user = await bootInfluencer();
+    if (user) { await initCampaignPage(); }
+  </script>
+</body>
+</html>

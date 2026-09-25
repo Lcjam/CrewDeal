@@ -5,25 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GroupDrop 콘솔 — 상품</title>
   <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다. */
+    .sku-row { display: flex; gap: var(--spacing-2); align-items: center; margin-bottom: var(--spacing-2); }
+    .sku-row input { flex: 1; }
+    .sku-chip-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sku-chip { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 8px; font-size: 12px; }
+    tr.product-row--new { background: var(--color-yellow-bg); }
+  </style>
 </head>
 <body>
   <div id="console-nav"></div>
   <main>
     <h1>상품</h1>
-    <p>이 화면은 다음 단계에서 구현됩니다.</p>
+    <p class="hint">공급사 상품과 SKU를 등록·조회합니다. 인플루언서가 캠페인을 개설할 때 여기서 등록한 상품·SKU를 선택합니다.</p>
+
+    <section class="card">
+      <h2>상품 등록</h2>
+      <div id="register-notice" class="notice" hidden></div>
+      <form id="product-form">
+        <div class="form-row">
+          <label for="product-name">상품명</label>
+          <input type="text" id="product-name" placeholder="예: 유기농 원두 세트">
+        </div>
+        <div class="form-row">
+          <label>SKU 옵션 (한 개 이상)</label>
+          <div id="sku-rows"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="add-sku-btn">+ 옵션 추가</button>
+        </div>
+        <div id="form-error"></div>
+        <button type="submit" class="btn btn-primary" id="submit-btn">등록</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>내 상품 목록</h2>
+      <p class="hint" id="list-stale-hint" hidden>목록을 불러오지 못했습니다 — 마지막으로 불러온 값을 표시 중입니다.</p>
+      <table id="products-table">
+        <thead><tr><th>ID</th><th>상품명</th><th>SKU 옵션</th></tr></thead>
+        <tbody id="products-tbody"><tr><td colspan="3">불러오는 중…</td></tr></tbody>
+      </table>
+    </section>
   </main>
 
   <script type="module">
-    import { requireRole } from '/console/common/session.js';
-    import { mountNav } from '/console/common/nav.js';
-
-    async function init() {
-      const user = await requireRole('SUPPLIER');
-      if (!user) return;
-      mountNav(user);
-    }
-
-    init();
+    import { bootSupplier } from '/console/supplier/supplier.js';
+    import { initProductsPage } from '/console/supplier/products.js';
+    const user = await bootSupplier();
+    if (user) { await initProductsPage(); }
   </script>
 </body>
 </html>
