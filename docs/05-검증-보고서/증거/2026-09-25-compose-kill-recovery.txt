@@ -1,14 +1,17 @@
-source_commit=4a6982b2ae0e4863717b82608dd0d6704ade70b2-dirty
+source_commit=fee7e6eecd60d8a536ef4e818ce40af7e5e706e6-dirty
 stage=compose-kill-recovery
 == 1. 격리 Compose 기동: groupdrop-week6-recovery (app 58112, app2 58113) ==
- Image groupdrop-app:local Building 
  Image groupdrop-mock-pg:local Building 
+ Image groupdrop-app:local Building 
  Image groupdrop-app:local Building 
 #1 [internal] load local bake definitions
 #1 reading from stdin 1.41kB done
 #1 DONE 0.0s
 
 #2 [app2 internal] load build definition from Dockerfile
+#2 DONE 0.0s
+
+#2 [app internal] load build definition from Dockerfile
 #2 transferring dockerfile: 509B done
 #2 DONE 0.0s
 
@@ -20,120 +23,120 @@ stage=compose-kill-recovery
 #4 DONE 0.8s
 
 #5 [app2 internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
-#5 DONE 0.8s
+#5 DONE 0.7s
 
 #6 [mock-pg internal] load .dockerignore
 #6 transferring context: 80B done
 #6 DONE 0.0s
 
-#7 [app internal] load .dockerignore
+#7 [app2 internal] load .dockerignore
 #7 transferring context: 80B done
 #7 DONE 0.0s
 
-#8 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
-#8 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f 0.0s done
+#8 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
+#8 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438 0.0s done
 #8 DONE 0.0s
 
-#9 [app2 build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
-#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438 0.0s done
+#9 [app2 stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
+#9 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f 0.0s done
 #9 DONE 0.0s
 
 #10 [mock-pg internal] load build context
-#10 transferring context: 2.56kB done
+#10 transferring context: 2.72kB done
 #10 DONE 0.0s
 
-#11 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#11 [mock-pg build 6/7] COPY src ./src
 #11 CACHED
 
-#12 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#12 [mock-pg build 4/7] COPY gradle ./gradle
 #12 CACHED
 
-#13 [mock-pg build 6/7] COPY src ./src
+#13 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
 #13 CACHED
 
-#14 [mock-pg build 5/7] RUN chmod +x gradlew
+#14 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
 #14 CACHED
 
-#15 [mock-pg build 4/7] COPY gradle ./gradle
+#15 [mock-pg build 5/7] RUN chmod +x gradlew
 #15 CACHED
 
 #16 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
 #16 CACHED
 
 #17 [app internal] load build context
-#17 transferring context: 20.83kB 0.0s done
+#17 transferring context: 21.23kB 0.0s done
 #17 DONE 0.0s
 
-#18 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#18 [app2 build 6/7] COPY src ./src
 #18 CACHED
 
-#19 [app build 5/7] RUN chmod +x gradlew
+#19 [app2 build 7/7] RUN ./gradlew --no-daemon bootJar
 #19 CACHED
 
-#20 [app build 4/7] COPY gradle ./gradle
+#20 [app2 stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
 #20 CACHED
 
-#21 [app build 2/7] WORKDIR /workspace
+#21 [app2 build 3/7] COPY gradlew build.gradle settings.gradle ./
 #21 CACHED
 
-#22 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#22 [app2 build 4/7] COPY gradle ./gradle
 #22 CACHED
 
-#23 [app build 7/7] RUN ./gradlew --no-daemon bootJar
+#23 [app2 build 2/7] WORKDIR /workspace
 #23 CACHED
 
-#24 [app stage-1 3/4] WORKDIR /app
+#24 [app2 build 5/7] RUN chmod +x gradlew
 #24 CACHED
 
-#25 [app build 6/7] COPY src ./src
+#25 [app2 stage-1 3/4] WORKDIR /app
 #25 CACHED
 
-#26 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#26 [app2 stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
 #26 CACHED
 
 #27 [app2] exporting to image
+#27 exporting layers
 #27 exporting layers done
-#27 exporting manifest sha256:36b9583719b715743b570360ef59a7261870e7a1c944f28e4c2df8d5a57cc1bf 0.0s done
-#27 exporting config sha256:334d361300358b3d60ada9d29bbd3c4e96be1c1efdbc94974bebf17acc5a0882
-#27 exporting config sha256:334d361300358b3d60ada9d29bbd3c4e96be1c1efdbc94974bebf17acc5a0882 0.0s done
-#27 exporting attestation manifest sha256:22b9040887eb55b67d11adf79379a37acf24de1b7772f2f900b9b475a645cdde 0.0s done
-#27 exporting manifest list sha256:b57f819f7950057fa447ebc64ac7c05231aaa2baf45ffc286f056d9526d432a6 0.0s done
-#27 naming to docker.io/library/groupdrop-app:local
+#27 exporting manifest sha256:118a2ccfdd98c318296ec7eeb61d4402c2d33ce13a3da1266585e38e8073a790 0.0s done
+#27 exporting config sha256:4073214ebe62db00f33f79b349aba561b4bf470588dc0bfb64aded4a1f334a68 0.0s done
+#27 exporting attestation manifest sha256:78b788fbabfd6f6779e3ece40175308d267ab058bf77366ed3a6b3f413716170 0.0s done
+#27 exporting manifest list sha256:7ac0d5cf935cdfdac4fe97969259e70984bce8faa7a7a4257366589eb64fd6c0 0.0s done
 #27 naming to docker.io/library/groupdrop-app:local done
+#27 unpacking to docker.io/library/groupdrop-app:local
 #27 unpacking to docker.io/library/groupdrop-app:local done
 #27 DONE 0.1s
 
 #28 [mock-pg] exporting to image
 #28 exporting layers done
-#28 exporting manifest sha256:05da635e97629085c4705fdfa341157189932848ba04b7c33bc7bfb9701f2931 done
-#28 exporting config sha256:9fd309f9a4b577d73e7dd932366368b0a306533f6d7d6dc46ce4bcfdd35e3f93 0.0s done
-#28 exporting attestation manifest sha256:a8e30d7ec1de577c2590bd5bd5f265b90217dae03dc0a18c0c879ce0373c749b 0.0s done
-#28 exporting manifest list sha256:d04b5456945c56543d26901442fca55cb6f70d8ed0e7e69dc4182cc2d34690ac 0.0s done
+#28 exporting manifest sha256:34be1730112dc0d27fc7468ef32526e8ce8ef24f5b5e14c2aa5957b2354506e9 done
+#28 exporting config sha256:17280e8cfa2e1fc47979bf2cba7b81c41544d084e772e0adf8a6fb5469272e92 done
+#28 exporting attestation manifest sha256:48dcb9218fc5830f1a4478df9ade95192956275746eb56fe8ab77186cb429080 0.0s done
+#28 exporting manifest list sha256:a5a1a7991f16919315e977ce8a1d4a1974dc14ec19e51b4ac32ce5bfbf3c0ad8 0.0s done
 #28 naming to docker.io/library/groupdrop-mock-pg:local done
 #28 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
-#28 DONE 0.2s
+#28 DONE 0.1s
 
 #29 [app] exporting to image
 #29 exporting layers done
-#29 exporting manifest sha256:804a96c1be6ff95268eb44aa03c0bae42dd8042d845eaf4800db4b667b4c2135 0.0s done
-#29 exporting config sha256:6e5d2ae7aa9284b047eb2a23f5c992c23afcdfb0305b5555798c56a8bd68c90f 0.0s done
-#29 exporting attestation manifest sha256:7fd800a4908879c37459e774421fb57c11df78655e764ae3fe8b0f8cfeac7656 0.0s done
-#29 exporting manifest list sha256:d8a0f9862bf94d8c3787f7e1803d48219f7608aa091aed5bfcef11f823d44c64 0.0s done
+#29 exporting manifest sha256:700e0888d86d36ab6af45df14435033bd5146c77c0a7f209eb13e9d78bd96a38 0.0s done
+#29 exporting config sha256:15d5af19f579135b47b1d869e23fdedb3b0fa1380294f9bfe9963fb44c08dba4 0.0s done
+#29 exporting attestation manifest sha256:543d18e2003e0a3dca194439379558bde186fabd4ca9aace1f56c27966dc2e29 0.0s done
+#29 exporting manifest list sha256:718bbbcf3c6e360381ea6db88854ea6382409286d4bf0d8337bdeaa37ecd0a3a 0.0s done
 #29 naming to docker.io/library/groupdrop-app:local done
 #29 unpacking to docker.io/library/groupdrop-app:local done
 #29 DONE 0.2s
 
 #30 [app2] resolving provenance for metadata file
-#30 DONE 0.1s
+#30 DONE 0.0s
 
 #31 [mock-pg] resolving provenance for metadata file
 #31 DONE 0.0s
 
 #32 [app] resolving provenance for metadata file
 #32 DONE 0.0s
+ Image groupdrop-app:local Built 
  Image groupdrop-mock-pg:local Built 
  Image groupdrop-app:local Built 
- Image groupdrop-app:local Built 
  Network groupdrop-week6-recovery_default Creating 
  Network groupdrop-week6-recovery_default Creating 
  Volume groupdrop-week6-recovery_pgdata Creating 
@@ -142,26 +145,26 @@ stage=compose-kill-recovery
  Volume groupdrop-week6-recovery_pgdata Created 
  Network groupdrop-week6-recovery_default Created 
  Network groupdrop-week6-recovery_default Created 
- Container groupdrop-week6-recovery-postgres-1 Creating 
  Container groupdrop-week6-recovery-mock-pg-1 Creating 
+ Container groupdrop-week6-recovery-postgres-1 Creating 
  Container groupdrop-week6-recovery-mock-pg-1 Created 
  Container groupdrop-week6-recovery-postgres-1 Created 
- Container groupdrop-week6-recovery-app2-1 Creating 
  Container groupdrop-week6-recovery-app-1 Creating 
+ Container groupdrop-week6-recovery-app2-1 Creating 
  Container groupdrop-week6-recovery-app2-1 Created 
  Container groupdrop-week6-recovery-app-1 Created 
- Container groupdrop-week6-recovery-mock-pg-1 Starting 
  Container groupdrop-week6-recovery-postgres-1 Starting 
- Container groupdrop-week6-recovery-mock-pg-1 Started 
+ Container groupdrop-week6-recovery-mock-pg-1 Starting 
  Container groupdrop-week6-recovery-postgres-1 Started 
  Container groupdrop-week6-recovery-postgres-1 Waiting 
  Container groupdrop-week6-recovery-postgres-1 Waiting 
- Container groupdrop-week6-recovery-postgres-1 Healthy 
- Container groupdrop-week6-recovery-app-1 Starting 
+ Container groupdrop-week6-recovery-mock-pg-1 Started 
  Container groupdrop-week6-recovery-postgres-1 Healthy 
  Container groupdrop-week6-recovery-app2-1 Starting 
- Container groupdrop-week6-recovery-app-1 Started 
+ Container groupdrop-week6-recovery-postgres-1 Healthy 
+ Container groupdrop-week6-recovery-app-1 Starting 
  Container groupdrop-week6-recovery-app2-1 Started 
+ Container groupdrop-week6-recovery-app-1 Started 
 == 2. UNKNOWN 생성 → docker kill → app 재기동 → 웹훅/이벤트 복구 ==
 == 1. 캠페인 준비 ==
 == 2. 성공 후 응답 유실 모드로 전환 (웹훅은 보류) ==
@@ -178,8 +181,8 @@ UNKNOWN 결제: 20건 (기대: 20)
 재발사한 웹훅: 20건
 == 5. 두 인스턴스의 워커가 이벤트를 소진할 때까지 대기 ==
 == 6. 인스턴스별 소비량과 이벤트 수 대조 ==
-outbox 소비: app=11 (kill 전 0 + 후 11) app2=9 합=20 / PROCESSED 행=20
-inbox  소비: app=11 (kill 전 0 + 후 11) app2=9 합=20 / PROCESSED 행=20
+outbox 소비: app=9 (kill 전 0 + 후 9) app2=11 합=20 / PROCESSED 행=20
+inbox  소비: app=9 (kill 전 0 + 후 9) app2=11 합=20 / PROCESSED 행=20
 == 7. 정합성 검증 SQL ==
 == 이벤트 처리 상태 ==
   status   | events 

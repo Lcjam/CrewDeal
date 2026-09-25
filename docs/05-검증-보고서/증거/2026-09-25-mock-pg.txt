@@ -1,4 +1,4 @@
-source_commit=4a6982b2ae0e4863717b82608dd0d6704ade70b2-dirty
+source_commit=fee7e6eecd60d8a536ef4e818ce40af7e5e706e6-dirty
 stage=mock-pg
 > Task :compileJava
 > Task :processResources
@@ -7,10 +7,10 @@ stage=mock-pg
 > Task :processTestResources NO-SOURCE
 > Task :testClasses
 OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
-2026-09-25T16:53:33.943+09:00  INFO 53326 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
-2026-09-25T16:53:33.946+09:00  INFO 53326 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
-2026-09-25T16:53:33.960+09:00  INFO 53326 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
-2026-09-25T16:53:33.962+09:00  INFO 53326 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-25T23:21:17.322+09:00  INFO 88804 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-25T23:21:17.331+09:00  INFO 88804 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-25T23:21:17.348+09:00  INFO 88804 --- [mock-pg] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-25T23:21:17.350+09:00  INFO 88804 --- [mock-pg] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
 > Task :test
 
 BUILD SUCCESSFUL in 7s
