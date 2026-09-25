@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 정산</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일 — admin/settlements.html과 같은 규칙(공통화 후보, 보고서 참고). */
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .amount--negative { color: var(--color-red); font-weight: 600; }
+    tr.row--recovery { background: var(--color-yellow-bg); }
+    tr.row--recovery:hover { background: var(--color-yellow-bg); filter: brightness(0.96); }
+    .hint { color: var(--color-text-muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="console-nav"></div>
+  <main>
+    <h1>정산</h1>
+    <p class="hint">
+      내 캠페인의 정산 배치 목록입니다 (SET-01~03). 캠페인이 종료되고 정산 유예 기간이 지나면
+      서버 스케줄러가 10초마다 배치를 생성·처리합니다. <strong>회수(RECOVERY)</strong> 배치는
+      이미 지급된 금액을 환불 때문에 되돌려받는 것이라 금액이 음수로 표시됩니다.
+    </p>
+    <p class="hint" id="list-stale-hint" hidden>목록 갱신에 실패했습니다 — 마지막으로 불러온 값을 표시 중입니다.</p>
+
+    <table id="settlements-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>캠페인</th><th>유형</th><th>상태</th><th>금액</th>
+          <th>시도</th><th>결정시각</th><th>완료시각</th><th>보류사유</th><th>실패</th>
+        </tr>
+      </thead>
+      <tbody id="settlements-tbody">
+        <tr><td colspan="10">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script type="module">
+    import { bootInfluencer } from '/console/influencer/influencer.js';
+    import { initSettlementsPage } from '/console/influencer/settlements.js';
+    const user = await bootInfluencer();
+    if (user) { initSettlementsPage(); }
+  </script>
+</body>
+</html>

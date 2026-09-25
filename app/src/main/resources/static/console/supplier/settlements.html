@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 정산</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 페이지 전용 — admin/settlements.html과 겹치는 num·negative·recovery 스타일은 공통화 후보. */
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .amount--negative { color: var(--color-red); font-weight: 600; }
+    tr.row--recovery { background: var(--color-yellow-bg); }
+    tr.row--recovery:hover { background: var(--color-yellow-bg); filter: brightness(0.96); }
+    .recovery-label { font-size: 11px; color: var(--color-red); font-weight: 600; margin-top: 2px; }
+    #net-totals table { margin-top: var(--spacing-2); }
+  </style>
+</head>
+<body>
+  <div id="console-nav"></div>
+  <main>
+    <h1>정산</h1>
+    <p class="hint">
+      내 상품이 쓰인 캠페인의 정산 배치입니다 (SET-01~03). 정산 스케줄러가 10초마다 자동으로
+      실행되므로 이 화면은 5초마다 새로고침합니다.
+    </p>
+    <p class="hint">
+      <strong>환불 회수(RECOVERY)</strong> 배치는 정산이 이미 완료된 뒤 환불이 발생하면 자동으로
+      만들어집니다 — 지급된 정산액 중 환불된 만큼을 회수하는 배치라 금액이 <strong>음수</strong>입니다.
+      정상 동작이며, 빨간 음수 금액과 "환불 회수" 표시로 일반 정산과 구분합니다.
+    </p>
+
+    <div id="notice" role="status" aria-live="polite"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>캠페인</th><th>유형</th><th>상태</th><th>금액</th>
+          <th>시도</th><th>결정시각</th><th>완료시각</th><th>보류사유</th><th>실패</th>
+        </tr>
+      </thead>
+      <tbody id="settlements-tbody">
+        <tr><td colspan="10">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin-top: var(--spacing-4);">캠페인별 순 정산액 <span class="hint">(정산 + 회수 합계, 참고용)</span></h2>
+    <div id="net-totals"></div>
+  </main>
+  <script type="module">
+    import { bootSupplier } from '/console/supplier/supplier.js';
+    import { initSettlementsPage } from '/console/supplier/settlements.js';
+    const user = await bootSupplier();
+    if (user) { initSettlementsPage(); }
+  </script>
+</body>
+</html>
