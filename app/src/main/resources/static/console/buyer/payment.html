@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 결제</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .crumb { margin-bottom: var(--spacing-3); font-size: 13px; }
+    .card h1 { margin-bottom: var(--spacing-2); }
+    .card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-2); }
+    .total-line { font-size: 15px; margin-top: var(--spacing-3); }
+    .muted { color: var(--color-text-muted); font-size: 13px; }
+    .continue-watching { margin-top: var(--spacing-2); }
+    .timeline { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+    .timeline li { padding: 4px 0; border-bottom: 1px solid var(--color-border); }
+    .timeline li:last-child { border-bottom: none; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <div id="page-content">불러오는 중…</div>
+  </main>
+  <script type="module">
+    import { bootBuyer } from '/console/buyer/buyer.js';
+    import { initPaymentPage } from '/console/buyer/payment.js';
+    const user = await bootBuyer();
+    if (user) { initPaymentPage(user); }
+  </script>
+</body></html>

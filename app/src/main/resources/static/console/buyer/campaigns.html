@@ -5,25 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GroupDrop 콘솔 — 공구 목록</title>
   <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .camp-row { cursor: pointer; }
+    .camp-period { font-size: 12px; color: var(--color-text-muted); white-space: nowrap; }
+    .camp-sku-list { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+    .camp-sku-list__row { display: flex; justify-content: space-between; gap: var(--spacing-2); }
+    .camp-sku-list__total { font-weight: 600; margin-top: 4px; border-top: 1px solid var(--color-border); padding-top: 4px; }
+  </style>
 </head>
 <body>
   <div id="console-nav"></div>
   <main>
     <h1>공구 목록</h1>
-    <p>이 화면은 다음 단계에서 구현됩니다.</p>
+    <p class="muted">
+      진행 중인 공동구매와 옵션별 잔여 재고를 1초마다 확인합니다. 행을 클릭하면 상세 화면으로 이동합니다.
+    </p>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>이름</th><th>상품</th><th>공급사</th><th>딜가</th><th>상태</th><th>판매 기간</th><th>SKU별 잔여 재고</th>
+        </tr>
+      </thead>
+      <tbody id="campaigns-tbody">
+        <tr><td colspan="7">불러오는 중…</td></tr>
+      </tbody>
+    </table>
   </main>
-
   <script type="module">
-    import { requireRole } from '/console/common/session.js';
-    import { mountNav } from '/console/common/nav.js';
-
-    async function init() {
-      const user = await requireRole('BUYER');
-      if (!user) return;
-      mountNav(user);
-    }
-
-    init();
+    import { bootBuyer } from '/console/buyer/buyer.js';
+    import { initCampaignsPage } from '/console/buyer/campaigns.js';
+    const user = await bootBuyer();
+    if (user) { initCampaignsPage(); }
   </script>
 </body>
 </html>

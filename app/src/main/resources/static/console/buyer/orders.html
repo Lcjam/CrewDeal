@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupDrop 콘솔 — 내 주문</title>
+  <link rel="stylesheet" href="/console/common/style.css">
+  <style>
+    /* 이 페이지에서만 쓰는 최소 스타일. 여러 화면에서 반복되면 style.css로 옮긴다 (보고서 "공통화 후보"). */
+    .muted { color: var(--color-text-muted); font-size: 13px; margin: 0 0 var(--spacing-2); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    #notice:empty { display: none; }
+    #poll-error:empty { display: none; }
+    #poll-error .btn { margin-left: var(--spacing-2); }
+    .order-item-line { display: flex; align-items: center; gap: var(--spacing-1); margin-bottom: 2px; white-space: nowrap; }
+    .order-item-line:last-child { margin-bottom: 0; }
+    td[data-field="items"] { min-width: 220px; }
+    td[data-field="actions"] { white-space: nowrap; }
+    td[data-field="remarks"] { min-width: 160px; }
+    .stock-diff { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+    .empty-state { text-align: center; padding: var(--spacing-5) 0; color: var(--color-text-muted); }
+    .continue-watching { margin-top: var(--spacing-2); }
+  </style>
+</head><body>
+  <div id="console-nav"></div>
+  <main>
+    <h1>내 주문</h1>
+    <p class="muted">
+      결제 대기 중인 주문이 있으면 목록을 자동으로 새로고침해 카운트다운과 만료·재고 복귀를 그대로 보여줍니다 (ORD-03).
+      최신 주문이 위에 표시됩니다.
+    </p>
+
+    <div id="notice" role="status" aria-live="polite"></div>
+    <div id="poll-error" role="alert"></div>
+    <div id="grace-notice"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>주문 ID</th><th>캠페인</th><th>항목</th><th>총수량</th><th>총액</th>
+          <th>상태</th><th>비고</th><th>조작</th>
+        </tr>
+      </thead>
+      <tbody id="orders-tbody">
+        <tr><td colspan="8">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script type="module">
+    import { bootBuyer } from '/console/buyer/buyer.js';
+    import { initOrdersPage } from '/console/buyer/orders.js';
+    const user = await bootBuyer();
+    if (user) { initOrdersPage(user); }
+  </script>
+</body></html>
