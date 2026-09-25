@@ -14,7 +14,7 @@ const MENUS = {
     // 목록 화면의 링크로만 들어간다.
     { label: '공구 목록', href: '/console/buyer/campaigns.html', ready: true },
     { label: '내 주문', href: '/console/buyer/orders.html', ready: true },
-    { label: '장애 주입 데모', href: '/console/demo/index.html', ready: false },
+    { label: '장애 주입 데모', href: '/console/demo/index.html', ready: true },
   ],
   INFLUENCER: [
     // 캠페인 상세(campaign.html?id=)는 ID가 필요해 메뉴에 두지 않는다 — 내 캠페인 목록의 링크로만 들어간다.
@@ -34,7 +34,7 @@ const MENUS = {
     { label: '정산', href: '/console/admin/settlements.html', ready: true },
     { label: '대사', href: '/console/admin/reconciliation.html', ready: true },
     { label: '이벤트', href: '/console/admin/events.html', ready: true },
-    { label: '장애 주입 데모', href: '/console/demo/index.html', ready: false },
+    { label: '장애 주입 데모', href: '/console/demo/index.html', ready: true },
   ],
 };
 
