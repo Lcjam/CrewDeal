@@ -1,0 +1,209 @@
+source_commit=74128cd813dc7af3cdf09a366d3e80f4b07fa65f
+stage=settlement-e2e
+ Image groupdrop-app:local Building 
+ Image groupdrop-mock-pg:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 979B done
+#1 DONE 0.0s
+
+#2 [app internal] load build definition from Dockerfile
+#2 transferring dockerfile: 509B done
+#2 DONE 0.0s
+
+#3 [mock-pg internal] load build definition from Dockerfile
+#3 transferring dockerfile: 509B done
+#3 DONE 0.0s
+
+#4 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#5 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
+#5 DONE 1.1s
+
+#6 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#6 DONE 1.1s
+
+#7 [app internal] load .dockerignore
+#7 transferring context: 80B done
+#7 DONE 0.0s
+
+#8 [mock-pg internal] load .dockerignore
+#8 transferring context: 80B done
+#8 DONE 0.0s
+
+#9 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7
+#9 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7 0.0s done
+#9 DONE 0.0s
+
+#10 [app build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd
+#10 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd 0.0s done
+#10 DONE 0.0s
+
+#11 [mock-pg internal] load build context
+#11 transferring context: 2.72kB done
+#11 DONE 0.0s
+
+#12 [mock-pg build 5/7] RUN chmod +x gradlew
+#12 CACHED
+
+#13 [mock-pg build 6/7] COPY src ./src
+#13 CACHED
+
+#14 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#14 CACHED
+
+#15 [mock-pg build 4/7] COPY gradle ./gradle
+#15 CACHED
+
+#16 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#16 CACHED
+
+#17 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#17 CACHED
+
+#18 [app internal] load build context
+#18 transferring context: 21.31kB 0.0s done
+#18 DONE 0.0s
+
+#19 [app stage-1 3/4] WORKDIR /app
+#19 CACHED
+
+#20 [app build 5/7] RUN chmod +x gradlew
+#20 CACHED
+
+#21 [app build 7/7] RUN ./gradlew --no-daemon bootJar
+#21 CACHED
+
+#22 [app build 4/7] COPY gradle ./gradle
+#22 CACHED
+
+#23 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#23 CACHED
+
+#24 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#24 CACHED
+
+#25 [app build 2/7] WORKDIR /workspace
+#25 CACHED
+
+#26 [app build 6/7] COPY src ./src
+#26 CACHED
+
+#27 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#27 CACHED
+
+#28 [app] exporting to image
+#28 exporting layers done
+#28 exporting manifest sha256:ecbf5ce71407b244b6d6933d9fb42300de5eba0d50b7c93b7a3a59ad1c188d65 0.0s done
+#28 exporting config sha256:bac98a9e5a5e0561db58f2119ea0bc1ccc82169c61a36eb25f3a087eb5612aa9 0.0s done
+#28 exporting attestation manifest sha256:90d02ad77b33875a443507e5711efc96670e724ced7b794b59114dee12163423 0.0s done
+#28 exporting manifest list sha256:911d49c1d06b9b899355070ccdb927d5b0e7ab2f40f14b76c8963c3a51fc007f 0.0s done
+#28 naming to docker.io/library/groupdrop-app:local done
+#28 unpacking to docker.io/library/groupdrop-app:local done
+#28 DONE 0.2s
+
+#29 [mock-pg] exporting to image
+#29 exporting layers done
+#29 exporting manifest sha256:a54b6406a5579f36cc6dd6c1b60f81c2913f2968891987ea33f6faad509b7db9 0.0s done
+#29 exporting config sha256:3bc94e34f78ca86e7fe5d9d8b2fc5358828b038ce95f9593ec6e9aab09e05dbe 0.0s done
+#29 exporting attestation manifest sha256:c0da3cf119f6684c587ee81d170a312278a77d3063fcf1a7ae44b37d9359cfdc 0.0s done
+#29 exporting manifest list sha256:ebadb3245efd496d6e808bae10b1c72a8a7e144cb0c2c495be34da708534bd77 0.0s done
+#29 naming to docker.io/library/groupdrop-mock-pg:local done
+#29 unpacking to docker.io/library/groupdrop-mock-pg:local done
+#29 DONE 0.1s
+
+#30 [mock-pg] resolving provenance for metadata file
+#30 DONE 0.0s
+
+#31 [app] resolving provenance for metadata file
+#31 DONE 0.0s
+ Image groupdrop-app:local Built 
+ Image groupdrop-mock-pg:local Built 
+ Network groupdrop-week6-settlement_default Creating 
+ Volume groupdrop-week6-settlement_pgdata Creating 
+ Volume groupdrop-week6-settlement_pgdata Creating 
+ Network groupdrop-week6-settlement_default Creating 
+ Volume groupdrop-week6-settlement_pgdata Created 
+ Volume groupdrop-week6-settlement_pgdata Created 
+ Network groupdrop-week6-settlement_default Created 
+ Network groupdrop-week6-settlement_default Created 
+ Container groupdrop-week6-settlement-postgres-1 Creating 
+ Container groupdrop-week6-settlement-mock-pg-1 Creating 
+ Container groupdrop-week6-settlement-mock-pg-1 Created 
+ Container groupdrop-week6-settlement-postgres-1 Created 
+ Container groupdrop-week6-settlement-app-1 Creating 
+ Container groupdrop-week6-settlement-app-1 Created 
+ Container groupdrop-week6-settlement-postgres-1 Starting 
+ Container groupdrop-week6-settlement-mock-pg-1 Starting 
+ Container groupdrop-week6-settlement-postgres-1 Started 
+ Container groupdrop-week6-settlement-postgres-1 Waiting 
+ Container groupdrop-week6-settlement-mock-pg-1 Started 
+ Container groupdrop-week6-settlement-postgres-1 Healthy 
+ Container groupdrop-week6-settlement-app-1 Starting 
+ Container groupdrop-week6-settlement-app-1 Started 
+== 0. 가상 PG 정상 모드 + 스택 격리 확인 ==
+== 1. 캠페인 준비 (공구가 19,900 × 수수료율 7.5% — 나누어떨어지지 않는 금액, 3.3) ==
+== 2. 결제 2건 ==
+  OK  주문 1 PAID: PAID
+  OK  주문 2 PAID: PAID
+== 3. 캠페인 강제 종료 + 정산 유예기간 경과 (SET-02) ==
+  OK  캠페인 1 CLOSED: CLOSED
+== 4. 정산 실행 → SETTLED (SET-01·SET-02, LED-04) ==
+  outcome=CREATED
+  OK  캠페인 1 SETTLED: SETTLED
+  OK  정상 정산 배치 2건 COMPLETED: 2
+  OK  공급사 배치 금액 2,000: 2000
+  OK  인플루언서 배치 금액 2,984 (원 단위 절사, ADR-008): 2984
+  OK  지급 분개 2건 (LED-04): 2
+  캠페인 계정 잔액 (지급 예정금은 0, 가상 현금으로 이동):
+        code        | balance 
+--------------------+---------
+ INFLUENCER_PAYABLE |       0
+ PAYOUT_CASH        |    4984
+ PG_FEE_PAYABLE     |    1194
+ PG_RECEIVABLE      |  -39800
+ PLATFORM_REVENUE   |   33622
+ SUPPLIER_PAYABLE   |       0
+(6 rows)
+
+== 5. S6 정산 재실행 — 같은 수령 주체의 정산 항목이 2개가 되지 않는다 ==
+  OK  정산 배치는 여전히 2건: 2
+  OK  수령 주체별 중복 정산 항목 0건: 0
+== 6. S8 정산 후 환불 → 회수 배치 자동 실행 (SET-03) ==
+  OK  환불 1 COMPLETED: COMPLETED
+  OK  회수 배치 2건 COMPLETED: 2
+  OK  회수 조정 2건, 미회수 0건: 0
+  OK  공급사 지급 예정금 잔액 0 (S8): 0
+  OK  인플루언서 지급 예정금 잔액 0 (S8): 0
+  OK  미회수 잔액 조회 0건
+== 7. S7 PG 불일치 주입 → 대사 분류 (REC-01) ==
+  대사 실행 {"id":2,"status":"COMPLETED","minAgeMinutes":0,"providerTransactionCount":3,"internalPaymentCount":2,"mismatchCount":1,"resolvedCount":0,"ledgerUnbalancedCount":0,"startedAt":"2026-09-26T05:53:55.541907Z","finishedAt":"2026-09-26T05:53:55.558410Z","error":null}
+  OK  주입 거래 pg_3 → MISSING_INTERNAL, 조회 API 노출
+  OK  내부 결제에 대한 불일치 0건 (정상 거래는 깨끗하게 매칭): 0
+== 8. S5 원장 재검산 + 운영 요약 ==
+  OK  불균형 원장 거래 0건: 0
+  OK  대사 실행 기록의 원장 불균형 수치도 0: 0
+  ops/summary {"unknownPaymentCount":0,"pendingOutboxCount":0,"oldestOutboxAgeSeconds":0,"openDiscrepancyCount":1,"blockedSettlementCount":0,"unrecoveredAdjustmentCount":0}
+== 9. 정산·대사 지표 노출 (16.4) ==
+ledger_unbalanced_total 0.0
+reconciliation_run_total 2.0
+settlement_completed_total 2.0
+settlement_recovered_total 2.0
+
+PASS: 5주차 정산·대사 실증 완료
+ Container groupdrop-week6-settlement-app-1 Stopping 
+ Container groupdrop-week6-settlement-mock-pg-1 Stopping 
+ Container groupdrop-week6-settlement-mock-pg-1 Stopped 
+ Container groupdrop-week6-settlement-mock-pg-1 Removing 
+ Container groupdrop-week6-settlement-mock-pg-1 Removed 
+ Container groupdrop-week6-settlement-app-1 Stopped 
+ Container groupdrop-week6-settlement-app-1 Removing 
+ Container groupdrop-week6-settlement-app-1 Removed 
+ Container groupdrop-week6-settlement-postgres-1 Stopping 
+ Container groupdrop-week6-settlement-postgres-1 Stopped 
+ Container groupdrop-week6-settlement-postgres-1 Removing 
+ Container groupdrop-week6-settlement-postgres-1 Removed 
+ Volume groupdrop-week6-settlement_pgdata Removing 
+ Network groupdrop-week6-settlement_default Removing 
+ Volume groupdrop-week6-settlement_pgdata Removed 
+ Network groupdrop-week6-settlement_default Removed 
