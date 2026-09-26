@@ -184,6 +184,28 @@ public class PaymentRepository {
                 """, this::mapOrphan, ts(threshold), limit);
     }
 
+    /**
+     * PAY-02 고착 선점 회수 대상. 요청 스레드가 완료를 기록하지 못한 결제 멱등 레코드 중, 임계가 지났고
+     * 연결된 결제가 더 이상 READY·PROCESSING이 아닌 것(스윕·웹훅·조회·대사가 상태를 정한 것)만 고른다.
+     * 멱등 행만 {@code SKIP LOCKED}로 잠그고 결제 행은 잠그지 않는다 — 여러 인스턴스의 스윕이 같은 행을
+     * 두 번 회수하지 않고, 결제 락을 먼저 잡는 확정 경로(settle·웹훅)와 순환 대기를 만들지 않기 위함이다.
+     * 만료된 키는 만료 판정(409 IDEMPOTENCY_KEY_EXPIRED)이 먼저이므로 대상이 아니다.
+     */
+    public List<StaleIdempotencyClaim> lockReclaimableIdempotencyClaims(Instant threshold, Instant now, int limit) {
+        return jdbc.query("""
+                SELECT i.scope, i.idempotency_key, i.resource_id
+                  FROM idempotency_requests i
+                  JOIN payments p ON p.id = i.resource_id
+                 WHERE i.resource_type = 'PAYMENT' AND i.status = 'IN_PROGRESS'
+                   AND i.created_at <= ? AND i.expires_at > ?
+                   AND p.status NOT IN ('READY', 'PROCESSING')
+                 ORDER BY i.id
+                 LIMIT ?
+                   FOR UPDATE OF i SKIP LOCKED
+                """, (rs, rowNum) -> new StaleIdempotencyClaim(rs.getString("scope"),
+                rs.getString("idempotency_key"), rs.getLong("resource_id")), ts(threshold), ts(now), limit);
+    }
+
     public List<OrphanCandidate> findStaleReadyWithoutAttempt(Instant threshold, int limit) {
         return jdbc.query("""
                 SELECT p.id, p.order_id FROM payments p
@@ -293,6 +315,8 @@ public class PaymentRepository {
     private static Timestamp ts(Instant instant) {
         return Timestamp.from(instant);
     }
+
+    public record StaleIdempotencyClaim(String scope, String key, Long paymentId) { }
 
     public record OrderForPayment(Long id, Long buyerId, String status, long totalAmount, Instant expiresAt) { }
 
