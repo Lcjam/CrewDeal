@@ -1,4 +1,4 @@
-source_commit=74128cd813dc7af3cdf09a366d3e80f4b07fa65f
+source_commit=54b3dd45aa2c7602bbea783ff9b1edd74ce7aa40-dirty
 stage=refund-e2e
  Image groupdrop-app:local Building 
  Image groupdrop-mock-pg:local Building 
@@ -14,118 +14,122 @@ stage=refund-e2e
 #3 transferring dockerfile: 509B done
 #3 DONE 0.0s
 
-#4 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
-#4 DONE 0.7s
+#4 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#4 DONE 0.0s
 
 #5 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
-#5 DONE 0.7s
+#5 DONE 1.1s
 
-#6 [app internal] load .dockerignore
-#6 transferring context: 80B done
-#6 DONE 0.0s
+#6 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#6 DONE 1.0s
 
-#7 [mock-pg internal] load .dockerignore
+#7 [app internal] load .dockerignore
 #7 transferring context: 80B done
 #7 DONE 0.0s
 
-#8 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd
-#8 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd 0.0s done
+#8 [mock-pg internal] load .dockerignore
+#8 transferring context: 80B done
 #8 DONE 0.0s
 
-#9 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7
-#9 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7 0.0s done
+#9 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd
+#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd 0.0s done
 #9 DONE 0.0s
 
-#10 [mock-pg internal] load build context
-#10 transferring context: 2.72kB done
+#10 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7
+#10 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7 0.0s done
 #10 DONE 0.0s
 
-#11 [mock-pg build 4/7] COPY gradle ./gradle
-#11 CACHED
+#11 [mock-pg internal] load build context
+#11 transferring context: 2.72kB done
+#11 DONE 0.0s
 
-#12 [mock-pg build 6/7] COPY src ./src
+#12 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
 #12 CACHED
 
-#13 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#13 [mock-pg build 5/7] RUN chmod +x gradlew
 #13 CACHED
 
 #14 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
 #14 CACHED
 
-#15 [mock-pg build 5/7] RUN chmod +x gradlew
+#15 [mock-pg build 6/7] COPY src ./src
 #15 CACHED
 
-#16 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#16 [mock-pg build 4/7] COPY gradle ./gradle
 #16 CACHED
 
-#17 [app internal] load build context
-#17 transferring context: 21.31kB 0.0s done
-#17 DONE 0.0s
+#17 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#17 CACHED
 
-#18 [app build 7/7] RUN ./gradlew --no-daemon bootJar
-#18 CACHED
+#18 [app internal] load build context
+#18 transferring context: 21.49kB 0.0s done
+#18 DONE 0.0s
 
-#19 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#19 [app build 5/7] RUN chmod +x gradlew
 #19 CACHED
 
-#20 [app build 5/7] RUN chmod +x gradlew
+#20 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
 #20 CACHED
 
-#21 [app build 6/7] COPY src ./src
+#21 [app build 4/7] COPY gradle ./gradle
 #21 CACHED
 
-#22 [app stage-1 3/4] WORKDIR /app
+#22 [app build 6/7] COPY src ./src
 #22 CACHED
 
-#23 [app build 4/7] COPY gradle ./gradle
+#23 [app build 7/7] RUN ./gradlew --no-daemon bootJar
 #23 CACHED
 
-#24 [app build 2/7] WORKDIR /workspace
+#24 [app stage-1 3/4] WORKDIR /app
 #24 CACHED
 
-#25 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#25 [app build 2/7] WORKDIR /workspace
 #25 CACHED
 
-#26 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#26 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
 #26 CACHED
 
-#27 [app] exporting to image
-#27 exporting layers done
-#27 exporting manifest sha256:c31053e0ff8f5b356678a403fd77a8b4be3240bc7bcfc4edb1be7ad73aa227d5 0.0s done
-#27 exporting config sha256:fc88e02147c8ef99a27670c82c07e8790ca313449ed3d201153b7ba821aecb49 0.0s done
-#27 exporting attestation manifest sha256:35f91c628e04b9d662ee96733608fcd50879a8300ebb73d46dd5063b46ec14de 0.0s done
-#27 exporting manifest list sha256:bee07320ddbb91d71f235f63cac01199aab5f9ff8a20e9f802d20f164dd69f67 0.0s done
-#27 naming to docker.io/library/groupdrop-app:local done
-#27 unpacking to docker.io/library/groupdrop-app:local done
-#27 DONE 0.1s
+#27 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
+#27 CACHED
 
-#28 [mock-pg] exporting to image
+#28 [app] exporting to image
+#28 exporting layers
 #28 exporting layers done
-#28 exporting manifest sha256:ec548f05b19fde701574a7ef35888938821c3e18c698c605f603d6612305d3ea 0.0s done
-#28 exporting config sha256:7a39a8325bb885e8e2f0f531e877b730a1d797ec7a30ff7ed6cb16766b49d4d4 0.0s done
-#28 exporting attestation manifest sha256:0f5a1e8735e457d20cea77c8f3baf3d3856b4c6abeb79b8cdde2b3b39dfbe4ae 0.0s done
-#28 exporting manifest list sha256:f87ed05974ba4045d54728f6e8a5a1a70b3a6c722c08996723689198cafce8ed done
-#28 naming to docker.io/library/groupdrop-mock-pg:local done
-#28 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#28 exporting manifest sha256:e188db288bc414b7da32b8425fd295874ff3f950ecf6a5243c902e4ae621e409 0.0s done
+#28 exporting config sha256:2f5a80e90b1a1ac7710769c13ae5ddc2c4475b4b05c0a35a3a8fe1efd08233b2 done
+#28 exporting attestation manifest sha256:99dc107b5013cba8e8a80199f3c6f6548453330c4c09daf993e4b9d0c24331a6 0.0s done
+#28 exporting manifest list sha256:f7797a4c8582f68af64823e2f38bd8d834e1ff2db67fdf8591c93fea43f93779 0.0s done
+#28 naming to docker.io/library/groupdrop-app:local done
+#28 unpacking to docker.io/library/groupdrop-app:local done
 #28 DONE 0.1s
 
-#29 [mock-pg] resolving provenance for metadata file
-#29 DONE 0.0s
+#29 [mock-pg] exporting to image
+#29 exporting layers done
+#29 exporting manifest sha256:ec548f05b19fde701574a7ef35888938821c3e18c698c605f603d6612305d3ea done
+#29 exporting config sha256:7a39a8325bb885e8e2f0f531e877b730a1d797ec7a30ff7ed6cb16766b49d4d4 0.0s done
+#29 exporting attestation manifest sha256:dfb9bfc518d69fe1ad2ecf163273987b6315bd9654944b0bc5071c26b6bb0f35 0.0s done
+#29 exporting manifest list sha256:c1e32d268bfe70798d0d3a3c02974527230391aabcdac6599c73b6f3831603d8 0.0s done
+#29 naming to docker.io/library/groupdrop-mock-pg:local done
+#29 unpacking to docker.io/library/groupdrop-mock-pg:local 0.0s done
+#29 DONE 0.1s
 
-#30 [app] resolving provenance for metadata file
+#30 [mock-pg] resolving provenance for metadata file
 #30 DONE 0.0s
+
+#31 [app] resolving provenance for metadata file
+#31 DONE 0.0s
  Image groupdrop-app:local Built 
  Image groupdrop-mock-pg:local Built 
  Network groupdrop-week6-refund_default Creating 
- Volume groupdrop-week6-refund_pgdata Creating 
- Volume groupdrop-week6-refund_pgdata Creating 
  Network groupdrop-week6-refund_default Creating 
+ Volume groupdrop-week6-refund_pgdata Creating 
+ Volume groupdrop-week6-refund_pgdata Creating 
  Volume groupdrop-week6-refund_pgdata Created 
  Volume groupdrop-week6-refund_pgdata Created 
  Network groupdrop-week6-refund_default Created 
  Network groupdrop-week6-refund_default Created 
- Container groupdrop-week6-refund-postgres-1 Creating 
  Container groupdrop-week6-refund-mock-pg-1 Creating 
+ Container groupdrop-week6-refund-postgres-1 Creating 
  Container groupdrop-week6-refund-mock-pg-1 Created 
  Container groupdrop-week6-refund-postgres-1 Created 
  Container groupdrop-week6-refund-app-1 Creating 
@@ -195,7 +199,7 @@ PASS: 4주차 환불·원장 실증 완료
  Container groupdrop-week6-refund-postgres-1 Stopped 
  Container groupdrop-week6-refund-postgres-1 Removing 
  Container groupdrop-week6-refund-postgres-1 Removed 
- Network groupdrop-week6-refund_default Removing 
  Volume groupdrop-week6-refund_pgdata Removing 
+ Network groupdrop-week6-refund_default Removing 
  Volume groupdrop-week6-refund_pgdata Removed 
  Network groupdrop-week6-refund_default Removed 
