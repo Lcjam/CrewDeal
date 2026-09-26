@@ -29,6 +29,13 @@ public class OrphanPaymentSweeper {
         } catch (RuntimeException exception) {
             log.error("고아 결제 스윕에 실패했습니다.", exception);
         }
+        // 스윕이 커밋한 UNKNOWN을 보고 회수하도록 스윕 뒤에 별도 트랜잭션으로 돈다. 스윕이 실패해도
+        // 웹훅·조회로 이미 확정된 결제의 고착 선점은 회수할 수 있어야 한다.
+        try {
+            sweepService.reclaimStaleIdempotency();
+        } catch (RuntimeException exception) {
+            log.error("고착 멱등 선점 회수에 실패했습니다.", exception);
+        }
     }
 
 }

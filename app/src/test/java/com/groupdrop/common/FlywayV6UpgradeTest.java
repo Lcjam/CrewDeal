@@ -39,6 +39,8 @@ class FlywayV6UpgradeTest extends AbstractPaymentIntegrationTest {
                     .schemas(schema)
                     .defaultSchema(schema)
                     .locations("classpath:db/migration")
+                    // 이 테스트의 대상은 V6·V7 업그레이드다. 이후 버전이 추가돼도 검증 범위가 흔들리지 않게 고정한다.
+                    .target(MigrationVersion.fromVersion("7"))
                     .load()
                     .migrate();
 

@@ -15,6 +15,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +32,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PaymentService {
 
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
     private static final String SOURCE = "request";
+    static final String RESOURCE_TYPE = "PAYMENT";
     private static final int DEFAULT_LIST_LIMIT = 100;
 
     private final UserRepository users;
@@ -120,6 +124,9 @@ public class PaymentService {
         }
 
         Long paymentId = payments.insertReadyPayment(orderId, order.totalAmount(), now);
+        // PAY-02: 선점과 결제를 같은 커밋에서 잇는다. PG 호출 중 이 스레드가 죽어도 고착 선점을
+        // 결제의 현재 상태로 회수할 수 있게 하기 위함이다 (OrphanPaymentSweepService#reclaimStaleIdempotency).
+        idempotency.attachResource(scope, key, RESOURCE_TYPE, paymentId, now);
         String merchantPaymentId = "mpay_" + paymentId;
         // PAY-01: 시도 기록과 READY → PROCESSING은 같은 트랜잭션이어야 한다.
         // 어긋나면 "attempt 있음 + READY" 고아가 스윕에도 대사에도 잡히지 않는다.
@@ -161,22 +168,32 @@ public class PaymentService {
 
         PaymentRepository.PaymentSnapshot settled = payments.findPayment(preparation.paymentId()).orElseThrow();
         PaymentResponse body = PaymentResponse.from(settled);
-        int httpStatus = httpStatusFor(settled.status());
-        idempotency.complete(scope, key, "PAYMENT", settled.id(), httpStatus, json.write(body), now);
-        return new Outcome(httpStatus, body);
+        int httpStatus = PaymentResponse.httpStatusFor(settled.status());
+        if (idempotency.completeIfInProgress(scope, key, RESOURCE_TYPE, settled.id(), httpStatus,
+                json.write(body), now)) {
+            return new Outcome(httpStatus, body);
+        }
+        return replayReclaimed(scope, key, settled.id());
     }
 
     /**
-     * 상태 코드로 결과를 위장하지 않는다.
-     * `UNKNOWN`은 미확정이므로 202, `SUPERSEDED`는 이 요청의 결제가 주문의 유효 결제가 되지 못했으므로 409다 —
-     * 200으로 답하면 환불 대상 결제를 "결제 성공"으로 통지하게 된다 (PAY-01, PAY-03).
+     * 이 요청이 고아 스윕 임계(PG 타임아웃 × 2)보다 오래 걸려, 스윕이 선점을 결제의 그때 상태로 먼저 완료한 경우다
+     * (캠페인 락 대기가 길면 GC 정지 없이도 일어난다). 저장된 응답을 덮어쓰지 않고 그대로 돌려준다 — 같은 키로
+     * 재요청한 클라이언트가 이미 그 응답을 받았을 수 있고, PAY-02는 같은 키에 한 가지 응답만 허용한다.
+     * 결제 상태 전이와 Outbox는 이 트랜잭션에서 정상 커밋되므로 정합성 손실은 없다. 202를 받은 클라이언트는
+     * 단건 폴링으로 확정을 본다.
      */
-    private int httpStatusFor(String paymentStatus) {
-        return switch (paymentStatus) {
-            case "UNKNOWN" -> HttpStatus.ACCEPTED.value();
-            case "SUPERSEDED" -> HttpStatus.CONFLICT.value();
-            default -> HttpStatus.OK.value();
-        };
+    private Outcome replayReclaimed(String scope, String key, Long paymentId) {
+        IdempotencyRepository.Record record = idempotency.find(scope, key)
+                .orElseThrow(() -> new IllegalStateException("멱등 요청 레코드를 찾을 수 없습니다: " + scope + "/" + key));
+        if (!record.completed() || !RESOURCE_TYPE.equals(record.resourceType())
+                || !paymentId.equals(record.resourceId())) {
+            throw new IllegalStateException("멱등 요청 완료 기록이 유실되었습니다: " + scope + "/" + key);
+        }
+        metrics.recordLateSettleReplayed();
+        log.warn("결제 {}의 요청 확정이 고착 선점 회수보다 늦었습니다. 저장된 {} 응답을 재생합니다.",
+                paymentId, record.responseStatus());
+        return new Outcome(record.responseStatus(), json.read(record.responseBody(), PaymentResponse.class));
     }
 
     /** PAY-02: 같은 키 재요청의 세 갈래 — 만료·해시 불일치·처리 중·완료 재생. */

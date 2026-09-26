@@ -26,6 +26,8 @@ public class PaymentMetrics {
     private final Counter unknown;
     private final Counter duplicatePrevented;
     private final Counter webhookDuplicate;
+    private final Counter idempotencyReclaimed;
+    private final Counter lateSettleReplayed;
 
     public PaymentMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -39,6 +41,8 @@ public class PaymentMetrics {
         this.unknown = registry.counter("payment.unknown", "source", "request");
         this.duplicatePrevented = registry.counter("payment.duplicate.prevented");
         this.webhookDuplicate = registry.counter("webhook.duplicate");
+        this.idempotencyReclaimed = registry.counter("payment.idempotency.reclaimed");
+        this.lateSettleReplayed = registry.counter("payment.idempotency.late.settle");
     }
 
     public void recordSucceeded(String source) {
@@ -76,6 +80,16 @@ public class PaymentMetrics {
     public void recordOrphanSwept(String kind) {
         orphanSwept.increment();
         counter("payment.orphan.swept.kind", "kind", kind).increment();
+    }
+
+    /** PAY-02: 요청 스레드가 완료를 기록하지 못한 결제 멱등 선점을 결제의 현재 상태로 완료한 건수. */
+    public void recordIdempotencyReclaimed() {
+        idempotencyReclaimed.increment();
+    }
+
+    /** 요청 확정이 회수보다 늦어 저장된 응답을 재생한 건수. 0이 아니면 임계(PG 타임아웃 × 2)가 짧다는 신호다. */
+    public void recordLateSettleReplayed() {
+        lateSettleReplayed.increment();
     }
 
     public void recordSuperseded() {
