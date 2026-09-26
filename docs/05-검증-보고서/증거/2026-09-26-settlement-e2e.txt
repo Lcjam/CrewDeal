@@ -1,4 +1,4 @@
-source_commit=74128cd813dc7af3cdf09a366d3e80f4b07fa65f
+source_commit=54b3dd45aa2c7602bbea783ff9b1edd74ce7aa40-dirty
 stage=settlement-e2e
  Image groupdrop-app:local Building 
  Image groupdrop-mock-pg:local Building 
@@ -6,117 +6,115 @@ stage=settlement-e2e
 #1 reading from stdin 979B done
 #1 DONE 0.0s
 
-#2 [app internal] load build definition from Dockerfile
+#2 [mock-pg internal] load build definition from Dockerfile
 #2 transferring dockerfile: 509B done
 #2 DONE 0.0s
 
-#3 [mock-pg internal] load build definition from Dockerfile
+#3 [app internal] load build definition from Dockerfile
 #3 transferring dockerfile: 509B done
 #3 DONE 0.0s
 
-#4 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
-#4 DONE 0.0s
+#4 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#4 DONE 0.7s
 
 #5 [mock-pg internal] load metadata for docker.io/library/eclipse-temurin:21-jdk-jammy
-#5 DONE 1.1s
+#5 DONE 0.8s
 
-#6 [app internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
-#6 DONE 1.1s
+#6 [app internal] load .dockerignore
+#6 transferring context: 80B done
+#6 DONE 0.0s
 
-#7 [app internal] load .dockerignore
+#7 [mock-pg internal] load .dockerignore
 #7 transferring context: 80B done
 #7 DONE 0.0s
 
-#8 [mock-pg internal] load .dockerignore
-#8 transferring context: 80B done
+#8 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7
+#8 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7 0.0s done
 #8 DONE 0.0s
 
-#9 [app stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7
-#9 resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf4129be2d09d7 0.0s done
+#9 [mock-pg build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd
+#9 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd 0.0s done
 #9 DONE 0.0s
 
-#10 [app build 1/7] FROM docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd
-#10 resolve docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:6adefddd4a20bceef702cedb0b03952fcd7691f9c7ccffe27014992abc0b46bd 0.0s done
+#10 [mock-pg internal] load build context
+#10 transferring context: 2.72kB done
 #10 DONE 0.0s
 
-#11 [mock-pg internal] load build context
-#11 transferring context: 2.72kB done
-#11 DONE 0.0s
+#11 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#11 CACHED
 
-#12 [mock-pg build 5/7] RUN chmod +x gradlew
+#12 [mock-pg build 6/7] COPY src ./src
 #12 CACHED
 
-#13 [mock-pg build 6/7] COPY src ./src
+#13 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
 #13 CACHED
 
-#14 [mock-pg build 7/7] RUN ./gradlew --no-daemon bootJar
+#14 [mock-pg build 4/7] COPY gradle ./gradle
 #14 CACHED
 
-#15 [mock-pg build 4/7] COPY gradle ./gradle
+#15 [mock-pg build 5/7] RUN chmod +x gradlew
 #15 CACHED
 
-#16 [mock-pg build 3/7] COPY gradlew build.gradle settings.gradle ./
+#16 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
 #16 CACHED
 
-#17 [mock-pg stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
-#17 CACHED
+#17 [app internal] load build context
+#17 transferring context: 21.49kB 0.0s done
+#17 DONE 0.0s
 
-#18 [app internal] load build context
-#18 transferring context: 21.31kB 0.0s done
-#18 DONE 0.0s
+#18 [app build 4/7] COPY gradle ./gradle
+#18 CACHED
 
-#19 [app stage-1 3/4] WORKDIR /app
+#19 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
 #19 CACHED
 
-#20 [app build 5/7] RUN chmod +x gradlew
+#20 [app stage-1 3/4] WORKDIR /app
 #20 CACHED
 
-#21 [app build 7/7] RUN ./gradlew --no-daemon bootJar
+#21 [app build 2/7] WORKDIR /workspace
 #21 CACHED
 
-#22 [app build 4/7] COPY gradle ./gradle
+#22 [app build 5/7] RUN chmod +x gradlew
 #22 CACHED
 
-#23 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
+#23 [app build 6/7] COPY src ./src
 #23 CACHED
 
-#24 [app stage-1 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#24 [app build 7/7] RUN ./gradlew --no-daemon bootJar
 #24 CACHED
 
-#25 [app build 2/7] WORKDIR /workspace
+#25 [app build 3/7] COPY gradlew build.gradle settings.gradle ./
 #25 CACHED
 
-#26 [app build 6/7] COPY src ./src
+#26 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
 #26 CACHED
 
-#27 [app stage-1 4/4] COPY --from=build /workspace/build/libs/*.jar app.jar
-#27 CACHED
+#27 [app] exporting to image
+#27 exporting layers
+#27 exporting layers done
+#27 exporting manifest sha256:a5390c0a29eada338142990fc81b945a867480c21cd5540e379b3dfd74cb39ae done
+#27 exporting config sha256:173f0e6d218caff4e0ebd4b1fb6df31de4a192c4db9a90c9bf06b8e68d169ea8 done
+#27 exporting attestation manifest sha256:cf8d68b11406e782b7b65bc50812a0c5a2bcabc90841a4b1a7048a81b9d99734 0.0s done
+#27 exporting manifest list sha256:26db03d0263e628ab7315b9a28a1131b7cb46284d80cd520daa619d0f8dda69a 0.0s done
+#27 naming to docker.io/library/groupdrop-app:local done
+#27 unpacking to docker.io/library/groupdrop-app:local done
+#27 DONE 0.1s
 
-#28 [app] exporting to image
+#28 [mock-pg] exporting to image
 #28 exporting layers done
-#28 exporting manifest sha256:ecbf5ce71407b244b6d6933d9fb42300de5eba0d50b7c93b7a3a59ad1c188d65 0.0s done
-#28 exporting config sha256:bac98a9e5a5e0561db58f2119ea0bc1ccc82169c61a36eb25f3a087eb5612aa9 0.0s done
-#28 exporting attestation manifest sha256:90d02ad77b33875a443507e5711efc96670e724ced7b794b59114dee12163423 0.0s done
-#28 exporting manifest list sha256:911d49c1d06b9b899355070ccdb927d5b0e7ab2f40f14b76c8963c3a51fc007f 0.0s done
-#28 naming to docker.io/library/groupdrop-app:local done
-#28 unpacking to docker.io/library/groupdrop-app:local done
-#28 DONE 0.2s
+#28 exporting manifest sha256:a54b6406a5579f36cc6dd6c1b60f81c2913f2968891987ea33f6faad509b7db9 done
+#28 exporting config sha256:3bc94e34f78ca86e7fe5d9d8b2fc5358828b038ce95f9593ec6e9aab09e05dbe done
+#28 exporting attestation manifest sha256:751f3718a11654a8ab2da19097f7f216384c163abf9d699f1aee75195b02be08 0.0s done
+#28 exporting manifest list sha256:d7db7ab5afbada437427448030aa0680a39b9096e92c198c201bc0687ca398e3 0.0s done
+#28 naming to docker.io/library/groupdrop-mock-pg:local done
+#28 unpacking to docker.io/library/groupdrop-mock-pg:local done
+#28 DONE 0.1s
 
-#29 [mock-pg] exporting to image
-#29 exporting layers done
-#29 exporting manifest sha256:a54b6406a5579f36cc6dd6c1b60f81c2913f2968891987ea33f6faad509b7db9 0.0s done
-#29 exporting config sha256:3bc94e34f78ca86e7fe5d9d8b2fc5358828b038ce95f9593ec6e9aab09e05dbe 0.0s done
-#29 exporting attestation manifest sha256:c0da3cf119f6684c587ee81d170a312278a77d3063fcf1a7ae44b37d9359cfdc 0.0s done
-#29 exporting manifest list sha256:ebadb3245efd496d6e808bae10b1c72a8a7e144cb0c2c495be34da708534bd77 0.0s done
-#29 naming to docker.io/library/groupdrop-mock-pg:local done
-#29 unpacking to docker.io/library/groupdrop-mock-pg:local done
-#29 DONE 0.1s
+#29 [mock-pg] resolving provenance for metadata file
+#29 DONE 0.0s
 
-#30 [mock-pg] resolving provenance for metadata file
+#30 [app] resolving provenance for metadata file
 #30 DONE 0.0s
-
-#31 [app] resolving provenance for metadata file
-#31 DONE 0.0s
  Image groupdrop-app:local Built 
  Image groupdrop-mock-pg:local Built 
  Network groupdrop-week6-settlement_default Creating 
@@ -177,7 +175,7 @@ stage=settlement-e2e
   OK  인플루언서 지급 예정금 잔액 0 (S8): 0
   OK  미회수 잔액 조회 0건
 == 7. S7 PG 불일치 주입 → 대사 분류 (REC-01) ==
-  대사 실행 {"id":2,"status":"COMPLETED","minAgeMinutes":0,"providerTransactionCount":3,"internalPaymentCount":2,"mismatchCount":1,"resolvedCount":0,"ledgerUnbalancedCount":0,"startedAt":"2026-09-26T05:53:55.541907Z","finishedAt":"2026-09-26T05:53:55.558410Z","error":null}
+  대사 실행 {"id":2,"status":"COMPLETED","minAgeMinutes":0,"providerTransactionCount":3,"internalPaymentCount":2,"mismatchCount":1,"resolvedCount":0,"ledgerUnbalancedCount":0,"startedAt":"2026-09-26T06:17:01.428847Z","finishedAt":"2026-09-26T06:17:01.444080Z","error":null}
   OK  주입 거래 pg_3 → MISSING_INTERNAL, 조회 API 노출
   OK  내부 결제에 대한 불일치 0건 (정상 거래는 깨끗하게 매칭): 0
 == 8. S5 원장 재검산 + 운영 요약 ==
@@ -203,7 +201,7 @@ PASS: 5주차 정산·대사 실증 완료
  Container groupdrop-week6-settlement-postgres-1 Stopped 
  Container groupdrop-week6-settlement-postgres-1 Removing 
  Container groupdrop-week6-settlement-postgres-1 Removed 
- Volume groupdrop-week6-settlement_pgdata Removing 
  Network groupdrop-week6-settlement_default Removing 
+ Volume groupdrop-week6-settlement_pgdata Removing 
  Volume groupdrop-week6-settlement_pgdata Removed 
  Network groupdrop-week6-settlement_default Removed 
