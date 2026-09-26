@@ -145,8 +145,8 @@ function payOnce(ctx, orderId, amount, idempotencyKey) {
 // --- 1. UNKNOWN 복구 (S4-a) — BUYER --------------------------------------------------------
 //
 // 202 응답의 providerPaymentId는 null이라 merchantPaymentId("mpay_" + payment.id)로 재발사 대상을
-// 지정한다 — PaymentService.java:123("mpay_" + paymentId)에 결합된 서버 내부 규칙이다. 이 결합이
-// 깨지면(접두사가 바뀌면) 이 시나리오도 바뀌어야 한다 — 리드 확인 대상.
+// 지정한다 — PaymentService#prepare("mpay_" + paymentId)에 결합된 서버 내부 규칙이다. 이 결합이
+// 깨지면(접두사가 바뀌면) 이 시나리오도 바뀌어야 한다 (결정 로그 D-056).
 async function runS4a(ctx) {
   const verdict = new Verdict();
   const { campaignId, useTimeoutDelay } = ctx.options;
