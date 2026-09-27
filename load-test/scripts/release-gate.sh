@@ -78,6 +78,14 @@ run_app_test() {
   (cd "${APP_DIR}" && ./gradlew --rerun-tasks test "$@")
 }
 
+# 증거 디렉터리는 dirty 판정에서 뺀다. 게이트가 매 단계 여기에 쓰므로, 같은 날 재실행하면 이미 커밋된
+# 증거 파일을 tee가 덮어써서 소스가 깨끗해도 -dirty가 찍힌다. 앞의 `.`을 빼면 전부 제외되니 주의.
+source_tree_clean() {
+  local pathspec=(-- . ":(exclude)${EVIDENCE_DIR#"${PROJECT_DIR}/"}")
+  git -C "${PROJECT_DIR}" diff --quiet "${pathspec[@]}" \
+    && git -C "${PROJECT_DIR}" diff --cached --quiet "${pathspec[@]}"
+}
+
 # 증거 파일의 source_commit이 실제로 실행된 코드를 가리켜야 한다. 워킹트리가 dirty면 HEAD는
 # 거짓말이 되므로, 게이트를 시작하기 전에 한 번만 확인한다 (ALLOW_DIRTY=1로 의도적 우회 가능).
 require_clean_worktree() {
@@ -85,16 +93,14 @@ require_clean_worktree() {
     echo "경고: ALLOW_DIRTY=1 — 증거의 source_commit이 실행된 코드와 다를 수 있습니다." >&2
     return 0
   fi
-  git -C "${PROJECT_DIR}" diff --quiet && git -C "${PROJECT_DIR}" diff --cached --quiet \
-    || fail "워킹트리가 dirty입니다. 커밋 후 실행하거나 ALLOW_DIRTY=1로 명시하세요."
+  source_tree_clean || fail "워킹트리가 dirty입니다. 커밋 후 실행하거나 ALLOW_DIRTY=1로 명시하세요."
 }
 
 record_stage() {
   local label="$1" evidence="${EVIDENCE_DIR}/${RUN_DATE}-${1}.txt"; shift
   mkdir -p "${EVIDENCE_DIR}"
   {
-    echo "source_commit=$(git -C "${PROJECT_DIR}" rev-parse HEAD)$(
-      git -C "${PROJECT_DIR}" diff --quiet && git -C "${PROJECT_DIR}" diff --cached --quiet || echo '-dirty')"
+    echo "source_commit=$(git -C "${PROJECT_DIR}" rev-parse HEAD)$(source_tree_clean || echo '-dirty')"
     echo "stage=${label}"
     "$@"
   } > >(tee "${evidence}") 2>&1
