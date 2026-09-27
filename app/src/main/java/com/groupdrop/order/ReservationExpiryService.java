@@ -10,7 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** ORD-03의 결제가 없는 2주차 순수 예약 만료. */
+/**
+ * ORD-03 예약 만료. 결제가 PROCESSING·UNKNOWN이거나 SUCCEEDED로 확정된 주문은 만료하지 않는다
+ * (만료 유예, {@link OrderRepository#lockExpirableOrderIds}).
+ */
 @Service
 public class ReservationExpiryService {
 

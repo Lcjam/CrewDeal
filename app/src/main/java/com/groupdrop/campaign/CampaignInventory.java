@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 
 /**
  * campaign_inventories 테이블 매핑 (V1__base_domain.sql). campaign_sku_id 1:1.
- * 재고 예약·차감(ORD-02)은 2주차 범위 — 이번 주는 캠페인 생성 시 초기 행만 만든다.
+ * 이 엔티티로는 캠페인 생성 시 초기 행만 만든다 — 재고 예약·차감(ORD-02)은 OrderRepository의 SQL이 한다.
  * 재고 수량에 대한 상태 변경은 절대 setter로 하지 않는다 — 조건부 UPDATE만 허용한다.
  */
 @Entity
