@@ -31,3 +31,4 @@ out/
 # 로컬 환경
 .env
 docker-compose.override.yml
+!/ARCHITECTURE.md
