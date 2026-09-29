@@ -49,6 +49,8 @@ groupdrop:
   message-batch-size: 50
   idempotency-key-ttl: 24h
   orphan-payment-sweep-interval: 1m
+  seed-enabled: true
+  seed-password: groupdrop123!
   pg:
     base-url: http://localhost:8081
     request-timeout: 3s
