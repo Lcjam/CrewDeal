@@ -135,14 +135,14 @@ public class OrderService {
         orderRepository.lockOrder(orderId);
         if (orderRepository.hasUnsettledPayment(orderId)) {
             throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
-                    "확정되지 않은 결제가 있어 취소할 수 없습니다. 결제 확정 후 다시 시도하세요.");
+                    "결제가 진행 중이라 지금은 취소할 수 없습니다. 결제 결과를 확인해 주세요.");
         }
 
         Instant now = Instant.now(clock);
         if (!orderRepository.cancelOrder(orderId, now)) {
             // 위 검사와 이 UPDATE 사이에 결제가 들어왔다. 판정 원천은 조건부 UPDATE 쪽이다.
             throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_NOT_SETTLED",
-                    "취소 처리 중 결제가 진행되어 취소하지 못했습니다. 결제 확정 후 다시 시도하세요.");
+                    "취소 처리 중 결제가 진행되어 취소하지 못했습니다. 결제 결과를 확인해 주세요.");
         }
         OrderRepository.OrderHeader header = order.header();
         if (!orderRepository.decrementPurchaseCounter(

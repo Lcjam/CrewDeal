@@ -87,7 +87,7 @@ const MESSAGES = {
   PAYMENT_AMOUNT_MISMATCH: '결제 금액이 주문 총액과 일치하지 않습니다.',
   PAYMENT_ALREADY_IN_PROGRESS: '이 주문에 대해 아직 끝나지 않은 결제가 있습니다.',
   PAYMENT_NOT_REFUNDABLE: '환불할 수 없는 결제 상태입니다.',
-  PAYMENT_NOT_SETTLED: '아직 정산되지 않은 결제입니다.',
+  PAYMENT_NOT_SETTLED: '아직 확정되지 않은 결제가 있습니다. 결제 결과를 확인해 주세요.',
 
   // --- 환불 ---
   REFUND_ALREADY_EXISTS: '이미 진행 중이거나 완료된 환불이 있습니다.',
