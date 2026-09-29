@@ -1,0 +1,429 @@
+측정 주체: 측정 스크립트 작성과 실행은 포트폴리오 정리 과정(2026-09-27~28)에서 AI 코딩 에이전트(Claude Code)로 했다. 조건은 실행 전에 고정했고 결과를 그대로 옮겼다. 사후 재측정이며 원하는 값이 나올 때까지 반복하지 않았다.
+
+# 주제 2. 대사 배치 동시 실행과 자동 해소 범위 (수정 전/후 재측정)
+
+측정 날짜: 2026-09-28 (KST). 3-a~3-c는 09-27에도 한 번 쟀다. 같은 조건의 앞선 측정은 2026-09-27-before-after.txt의 "측정 3"에 있다(3-a~3-c).
+대상 커밋: 수정 = 32cc5da, 수정 전 = d4f0a3a (32cc5da^)
+환경: WSL2 (Linux 6.18) / Docker Desktop 29.7.2 / OpenJDK 21.0.12 / Testcontainers postgres:16-alpine / 단일 JVM / StubPgClient (Docker Desktop 29.7.2는 09-28 측정 시작 전 `docker info`로 확인한 값이다. 호스트 OpenJDK 버전은 09-28에 따로 기록하지 않았고, 같은 머신의 전날(2026-09-27) 측정 기록 값이다)
+한계: 운영 환경이 아니다. 같은 JVM, 같은 커넥션 풀에서 CountDownLatch로 두 대사를 같은 순간에 출발시킨 조건이다.
+      "48/50"은 운영에서의 발생 빈도가 아니라 "겹치면 무엇이 남는가"를 본 값이다.
+      지급(PAYOUT)은 원장에 지급을 기록하는 내부 가상 지급이며 외부 송금은 없다.
+방법: 커밋마다 worktree를 만들고(git worktree add --detach) 측정 전용 테스트 2개(커밋하지 않음)를 넣어 Gradle로 실행했다.
+      측정 파일 2개 외의 변경은 없다. 클래스마다 before/after 각 1회 실행했고, 조건을 바꾸거나 다시 돌리지 않았다.
+      어서션 없이 MEASURE 줄만 출력한다.
+
+## 1. 요약
+
+| 측정 | 조건 | before (d4f0a3a) | after (32cc5da) |
+|---|---|---|---|
+| 3-a 대사 cutoff 오해소 | PG에만 있는 30초 전 거래 주입 -> run(0) -> run(30) | run(30) 뒤 MISSING_INTERNAL이 RESOLVED (다음 대사에서 재검출되지 않아 자동 해소) | run(30) 뒤에도 OPEN |
+| 3-b 정산 영향 | 30초 전 SUCCEEDED 결제(PG에 없음 = MISSING_PROVIDER) -> run(0) -> run(30) | 캠페인 미해결 불일치 수 1 -> 0 | 1 -> 1 |
+| 3-c 동시 실행 | startRun 연속 2회 | 두 번째 성공, RUNNING 2행 | 두 번째 ReconciliationAlreadyRunningException, RUNNING 1행 |
+| 3-d 자기 회복 | 3-b 상태에서 결제 시각을 31분 되돌리고 run(30) 재실행 | 1 -> 0 -> (+31분) 1: 닫힌 행은 RESOLVED로 남고 새 OPEN 행이 생김 | 1 -> 1 -> 1: OPEN 1행 유지 |
+| 3-e 동시 대사 50회 | 9일 전 결제(PG 기록 소실 대역)의 OPEN 불일치 X, run(30) 2개를 래치로 동시 출발 | X가 닫힌 횟수 48/50, 거부된 실행이 있던 쌍 0/50 | X가 닫힌 횟수 0/50, 거부된 실행이 있던 쌍 50/50 |
+| 3-f 정산 (즉시 대사 후) | 정상 PAID 주문의 PG 기록 소실 -> run(0) -> run(30) -> 캠페인 즉시 종료 -> 운영자 정산 | 미해결 1 -> 0, 두 배치 COMPLETED, PAYOUT 원장 거래 2건 | 미해결 1 -> 1, 두 배치 HELD(미해결 대사 불일치 1건), PAYOUT 0건 |
+| 3-g 대조군 | 3-f에서 run(0) 없이 run(30)만 | 미해결 0, 두 배치 COMPLETED, PAYOUT 2건 | 같음 (미해결 0, COMPLETED, PAYOUT 2건) |
+| 3-h 정기 정산 스캔 | 8일 전 종료 캠페인(유예 7일 경과), 순차 run(30) -> 동시 run(30) 한 쌍 1회 -> SettlementScheduler.runOnce() | 순차 run(30) 뒤 미해결 1, 동시 쌍 [OK, OK], 쌍 뒤 미해결 0, 두 배치 COMPLETED, PAYOUT 2건 | 순차 run(30) 뒤 미해결 1, 동시 쌍 [예외 ReconciliationAlreadyRunningException, OK], 쌍 뒤 미해결 1, 두 배치 HELD, PAYOUT 0건 |
+
+3-g는 대조군이다. run(0) 없이 정기 대사만 돌면 30초 전 결제는 조회 범위 밖이라 불일치가 생기지 않고, 수정 전후가 같다.
+"잘못 닫힌 불일치는 다음 대사에서 다시 열린다"(3-d의 새 OPEN 행)는 점과, 그 사이 정산 스캔이 돌면 지급된다는 점은 3-h가 보여준다.
+다만 "서로 다른 서버 주기가 계속 겹치면 매번 다시 닫힌다"는 것은 측정하지 않은 추론이다.
+
+## 2. 조건 메모 (측정 원문에 붙어 있던 것)
+
+- 3-e: 9일 전 결제(PG 기록 소실 대역 pgClient.reset)의 MISSING_PROVIDER 불일치 X가 OPEN인 상태에서 run(30) 두 개를 CountDownLatch로 동시 출발, 50회. 같은 JVM, 같은 커넥션 풀. 발생 빈도가 아니라 "겹치면 무엇이 남는가".
+- 3-h: 같은 대역 + 캠페인 8일 전 종료(유예기간 7일 경과). 순차 run(30) -> 동시 run(30) 한 쌍 1회 -> SettlementScheduler.runOnce().
+- 3-e after의 rejected 50/50은 'EX' 접두만 셌다. 로그에 LeaseLost, '실행에 실패' 0건이므로 모두 startRun 거부로 판단했다.
+- 시각 되돌리기(9일, 8일, 31분)는 SQL 대역이다. 테스트 기반이 실제 now()를 쓰기 때문이다.
+
+## 3. MEASURE 원문 (3-a ~ 3-h)
+
+명령: cd <worktree>/app && ./gradlew test --tests '<클래스>' -i   (Gradle -i 로그에서 MEASURE 줄만 발췌, 앞 공백 제거)
+클래스: com.groupdrop.reconciliation.V3ReconciliationMeasureTest (3-a ~ 3-g), com.groupdrop.reconciliation.V3ConcurrentSettlementMeasureTest (3-h)
+before = d4f0a3a, after = 32cc5da.
+
+```
+## before d4f0a3a — com.groupdrop.reconciliation.V3ReconciliationMeasureTest
+MEASURE3a after run(0): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3a after run(30): [{discrepancy_type=MISSING_INTERNAL, status=RESOLVED, resolution_note=다음 대사에서 재검출되지 않아 자동 해소}]
+MEASURE3b after run(0): countOpenDiscrepancies(campaign)=1 rows=[{id=2, discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3b after run(30): countOpenDiscrepancies(campaign)=0 rows=[{id=2, discrepancy_type=MISSING_PROVIDER, status=RESOLVED, resolution_note=다음 대사에서 재검출되지 않아 자동 해소}]
+MEASURE3c first=6 second=SUCCESS runId=7 RUNNING rows=2
+MEASURE3c after cleanup RUNNING rows=0
+MEASURE3d open count run(0)=1 run(30)=0 (+31min) run(30)=1 rows=[{id=4, discrepancy_type=MISSING_PROVIDER, status=RESOLVED, resolution_note=다음 대사에서 재검출되지 않아 자동 해소}, {id=5, discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3f order=PAID payment=SUCCEEDED open count run(0)=1 run(30)=0
+MEASURE3f batches=[SUPPLIER:COMPLETED, INFLUENCER:COMPLETED] PAYOUT ledger tx=2
+MEASURE3g (no run(0)) open count run(30)=0 batches=[SUPPLIER:COMPLETED, INFLUENCER:COMPLETED] PAYOUT ledger tx=2
+MEASURE3e trials=50 X closed after concurrent pair=48/50 pairs with a rejected run=0/50
+MEASURE3e rows for X by status=[{status=RESOLVED, n=48}]
+BUILD SUCCESSFUL in 17s
+
+## after 32cc5da — com.groupdrop.reconciliation.V3ReconciliationMeasureTest
+MEASURE3a after run(0): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3a after run(30): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3b after run(0): countOpenDiscrepancies(campaign)=1 rows=[{id=2, discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3b after run(30): countOpenDiscrepancies(campaign)=1 rows=[{id=2, discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3c first=6 second=EXCEPTION com.groupdrop.reconciliation.ReconciliationRepository$ReconciliationAlreadyRunningException RUNNING rows=1
+MEASURE3c after cleanup RUNNING rows=0
+MEASURE3d open count run(0)=1 run(30)=1 (+31min) run(30)=1 rows=[{id=4, discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3f order=PAID payment=SUCCEEDED open count run(0)=1 run(30)=1
+MEASURE3f batches=[SUPPLIER:HELD(미해결 대사 불일치 1건), INFLUENCER:HELD(미해결 대사 불일치 1건)] PAYOUT ledger tx=0
+MEASURE3g (no run(0)) open count run(30)=0 batches=[SUPPLIER:COMPLETED, INFLUENCER:COMPLETED] PAYOUT ledger tx=2
+MEASURE3e trials=50 X closed after concurrent pair=0/50 pairs with a rejected run=50/50
+MEASURE3e rows for X by status=[{status=OPEN, n=1}]
+BUILD SUCCESSFUL in 19s
+
+## before d4f0a3a — com.groupdrop.reconciliation.V3ConcurrentSettlementMeasureTest
+MEASURE3h open after sequential run(30)=1 concurrent pair=[OK COMPLETED, OK COMPLETED] open after pair=0
+MEASURE3h settlement scheduler batches=[SUPPLIER:COMPLETED, INFLUENCER:COMPLETED] PAYOUT ledger tx=2
+BUILD SUCCESSFUL in 14s
+
+## after 32cc5da — com.groupdrop.reconciliation.V3ConcurrentSettlementMeasureTest
+MEASURE3h open after sequential run(30)=1 concurrent pair=[EX ReconciliationAlreadyRunningException, OK COMPLETED] open after pair=1
+MEASURE3h settlement scheduler batches=[SUPPLIER:HELD(미해결 대사 불일치 1건), INFLUENCER:HELD(미해결 대사 불일치 1건)] PAYOUT ledger tx=0
+BUILD SUCCESSFUL in 14s
+
+## 조건 메모
+- 3-e: 9일 전 결제(PG 기록 소실 대역 pgClient.reset)의 MISSING_PROVIDER 불일치 X가 OPEN인 상태에서 run(30) 두 개를 CountDownLatch로 동시 출발, 50회. 같은 JVM·같은 커넥션 풀. 발생 빈도가 아니라 '겹치면 무엇이 남는가'.
+- 3-h: 같은 대역 + 캠페인 8일 전 종료(유예기간 7일 경과). 순차 run(30) → 동시 run(30) 한 쌍 1회 → SettlementScheduler.runOnce().
+- 3-e after의 rejected 50/50은 'EX' 접두만 셌다. 로그에 LeaseLost·'실행에 실패' 0건 → 모두 startRun 거부로 판단.
+- 지급(PAYOUT)은 원장에 지급을 기록하는 내부 가상 지급이다(외부 송금 없음).
+- 시각 되돌리기(9일, 8일, 31분)는 SQL 대역이다. 테스트 기반이 실제 now()를 쓰기 때문.
+```
+
+## 4. 측정 테스트 소스 전문
+
+두 파일 모두 app/src/test/java/com/groupdrop/reconciliation/ 아래에 넣고 실행했다. before와 after에 같은 파일을 넣었다.
+
+### V3ReconciliationMeasureTest.java (3-a ~ 3-g)
+```java
+package com.groupdrop.reconciliation;
+
+import com.groupdrop.payment.AbstractPaymentIntegrationTest;
+import com.groupdrop.settlement.SettlementRepository;
+import com.groupdrop.settlement.SettlementService;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.springframework.beans.factory.annotation.Autowired;
+
+/**
+ * V3 검증관 측정 전용 (커밋하지 않음). before(d4f0a3a)와 after(32cc5da)에 같은 파일을 넣는다.
+ * 어서션 없이 MEASURE 줄만 출력한다.
+ */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class V3ReconciliationMeasureTest extends AbstractPaymentIntegrationTest {
+
+    @Autowired
+    private ReconciliationService reconciliations;
+    @Autowired
+    private ReconciliationRepository repository;
+    @Autowired
+    private SettlementRepository settlements;
+    @Autowired
+    private SettlementService settlementService;
+
+    // 3-a: PG에만 있는 30초 전 거래 → run(0) → run(30)
+    @Test
+    @Order(1)
+    void m3a() {
+        String providerId = "pg_v3a_" + UUID.randomUUID();
+        pgClient.injectTransaction(providerId, 999_000_001L, 4_000L, "SUCCEEDED",
+                Instant.now().minusSeconds(30), 0L);
+        reconciliations.run(0);
+        System.out.println("MEASURE3a after run(0): " + rowsOfProvider(providerId));
+        reconciliations.run(30);
+        System.out.println("MEASURE3a after run(30): " + rowsOfProvider(providerId));
+    }
+
+    // 3-b: PG에 없는 30초 전 SUCCEEDED 결제(SQL) → run(0) → run(30), 캠페인 OPEN 불일치 수
+    @Test
+    @Order(2)
+    void m3b() {
+        OrderFixture order = order(10, 1);
+        Long paymentId = insertSucceededPayment(order.orderId(), "pg_v3b_" + UUID.randomUUID(), 30);
+        reconciliations.run(0);
+        System.out.println("MEASURE3b after run(0): countOpenDiscrepancies(campaign)="
+                + settlements.countOpenDiscrepancies(order.campaignId()) + " rows=" + rowsOfPayment(paymentId));
+        reconciliations.run(30);
+        System.out.println("MEASURE3b after run(30): countOpenDiscrepancies(campaign)="
+                + settlements.countOpenDiscrepancies(order.campaignId()) + " rows=" + rowsOfPayment(paymentId));
+    }
+
+    // 3-c: startRun 연속 2회
+    @Test
+    @Order(3)
+    void m3c() {
+        Long first = repository.startRun(0, Instant.now());
+        String second;
+        Long secondId = null;
+        try {
+            secondId = repository.startRun(30, Instant.now());
+            second = "SUCCESS runId=" + secondId;
+        } catch (RuntimeException exception) {
+            second = "EXCEPTION " + exception.getClass().getName();
+        }
+        System.out.println("MEASURE3c first=" + first + " second=" + second + " RUNNING rows="
+                + count("reconciliation_runs", "status='RUNNING'"));
+        repository.failRun(first, "measure cleanup", Instant.now());
+        if (secondId != null) {
+            repository.failRun(secondId, "measure cleanup", Instant.now());
+        }
+        System.out.println("MEASURE3c after cleanup RUNNING rows=" + count("reconciliation_runs", "status='RUNNING'"));
+    }
+
+    // 3-d: 3-b와 같은 상태에서 31분이 지난 것처럼 결제 시각을 되돌리고 다시 run(30) — 자기 회복 여부
+    @Test
+    @Order(4)
+    void m3d() {
+        OrderFixture order = order(10, 1);
+        Long paymentId = insertSucceededPayment(order.orderId(), "pg_v3d_" + UUID.randomUUID(), 30);
+        reconciliations.run(0);
+        long c0 = settlements.countOpenDiscrepancies(order.campaignId());
+        reconciliations.run(30);
+        long c1 = settlements.countOpenDiscrepancies(order.campaignId());
+        jdbc.update("""
+                UPDATE payments SET created_at = created_at - interval '31 minutes',
+                                    approved_at = approved_at - interval '31 minutes' WHERE id=?
+                """, paymentId);
+        reconciliations.run(30);
+        long c2 = settlements.countOpenDiscrepancies(order.campaignId());
+        System.out.println("MEASURE3d open count run(0)=" + c0 + " run(30)=" + c1 + " (+31min) run(30)=" + c2
+                + " rows=" + rowsOfPayment(paymentId));
+    }
+
+    // 3-f: 정상 결제·PAID 주문의 PG 기록 소실 → run(0) → run(30) → 캠페인 즉시 종료 → 운영자 정산 실행
+    @Test
+    @Order(5)
+    void m3f() {
+        OrderFixture order = order(10, 1);
+        Long paymentId = pay(order).body().id();
+        outboxWorker.drain();
+        pgClient.reset(); // PG 쪽 기록 소실 대역 → MISSING_PROVIDER
+        reconciliations.run(0);
+        long c0 = settlements.countOpenDiscrepancies(order.campaignId());
+        reconciliations.run(30);
+        long c1 = settlements.countOpenDiscrepancies(order.campaignId());
+        closeCampaign(order.campaignId(), 0);
+        settlementService.run(ADMIN, order.campaignId());
+        System.out.println("MEASURE3f order=" + orderStatus(order.orderId()) + " payment=" + paymentStatus(paymentId)
+                + " open count run(0)=" + c0 + " run(30)=" + c1);
+        System.out.println("MEASURE3f batches=" + batches(order.campaignId()) + " PAYOUT ledger tx="
+                + count("ledger_transactions", "transaction_type='PAYOUT' AND campaign_id=" + order.campaignId()));
+    }
+
+    // 3-g: 대조군 — run(0) 없이 정기 run(30)만 돈 뒤 같은 정산
+    @Test
+    @Order(6)
+    void m3g() {
+        OrderFixture order = order(10, 1);
+        pay(order);
+        outboxWorker.drain();
+        pgClient.reset();
+        reconciliations.run(30);
+        long c1 = settlements.countOpenDiscrepancies(order.campaignId());
+        closeCampaign(order.campaignId(), 0);
+        settlementService.run(ADMIN, order.campaignId());
+        System.out.println("MEASURE3g (no run(0)) open count run(30)=" + c1 + " batches=" + batches(order.campaignId())
+                + " PAYOUT ledger tx="
+                + count("ledger_transactions", "transaction_type='PAYOUT' AND campaign_id=" + order.campaignId()));
+    }
+
+    // 3-e: 오래된(9일 전) 실제 불일치 X가 OPEN인 상태에서 run(30) 두 개를 래치로 동시 시작, 50회
+    @Test
+    @Order(7)
+    void m3e() throws Exception {
+        OrderFixture order = order(10, 1);
+        Long paymentId = pay(order).body().id();
+        outboxWorker.drain();
+        pgClient.reset();
+        jdbc.update("""
+                UPDATE payments SET created_at = created_at - interval '9 days',
+                                    approved_at = approved_at - interval '9 days' WHERE id=?
+                """, paymentId);
+        int trials = 50;
+        int closed = 0;
+        int secondRejected = 0;
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            for (int i = 0; i < trials; i++) {
+                reconciliations.run(30); // 순차 실행으로 X를 OPEN으로 만든다 (닫혀 있었다면 새 행)
+                long pre = settlements.countOpenDiscrepancies(order.campaignId());
+                if (pre != 1) {
+                    System.out.println("MEASURE3e trial " + i + " precondition open=" + pre);
+                }
+                CountDownLatch start = new CountDownLatch(1);
+                Future<String> r1 = executor.submit(() -> runAfter(start));
+                Future<String> r2 = executor.submit(() -> runAfter(start));
+                start.countDown();
+                String o1 = r1.get(30, TimeUnit.SECONDS);
+                String o2 = r2.get(30, TimeUnit.SECONDS);
+                if (o1.startsWith("EX") || o2.startsWith("EX")) {
+                    secondRejected++;
+                }
+                if (settlements.countOpenDiscrepancies(order.campaignId()) == 0) {
+                    closed++;
+                }
+            }
+        }
+        System.out.println("MEASURE3e trials=" + trials + " X closed after concurrent pair=" + closed + "/" + trials
+                + " pairs with a rejected run=" + secondRejected + "/" + trials);
+        System.out.println("MEASURE3e rows for X by status=" + jdbc.queryForList(
+                "SELECT status, count(*) AS n FROM reconciliation_discrepancies WHERE payment_id=? GROUP BY status ORDER BY status",
+                paymentId));
+    }
+
+    private String runAfter(CountDownLatch start) throws InterruptedException {
+        start.await();
+        try {
+            return "OK " + reconciliations.run(30).status();
+        } catch (RuntimeException exception) {
+            return "EX " + exception.getClass().getSimpleName();
+        }
+    }
+
+    private List<String> batches(Long campaignId) {
+        return settlements.findBatchesOfCampaign(campaignId).stream()
+                .map(b -> b.payeeType() + ":" + b.status() + (b.holdReason() == null ? "" : "(" + b.holdReason() + ")"))
+                .toList();
+    }
+
+    private List<Map<String, Object>> rowsOfProvider(String providerId) {
+        return jdbc.queryForList("""
+                SELECT discrepancy_type, status, resolution_note FROM reconciliation_discrepancies
+                 WHERE provider_payment_id=? ORDER BY id
+                """, providerId);
+    }
+
+    private List<Map<String, Object>> rowsOfPayment(Long paymentId) {
+        return jdbc.queryForList("""
+                SELECT id, discrepancy_type, status, resolution_note FROM reconciliation_discrepancies
+                 WHERE payment_id=? ORDER BY id
+                """, paymentId);
+    }
+
+    private Long insertSucceededPayment(Long orderId, String providerPaymentId, int secondsAgo) {
+        return jdbc.queryForObject("""
+                INSERT INTO payments(order_id,status,amount,provider_payment_id,approved_at,created_at,updated_at)
+                VALUES(?,'SUCCEEDED',?,?, now() - make_interval(secs => ?), now() - make_interval(secs => ?), now())
+                RETURNING id
+                """, Long.class, orderId, DEAL_PRICE, providerPaymentId, (double) secondsAgo, (double) secondsAgo);
+    }
+}
+```
+
+### V3ConcurrentSettlementMeasureTest.java (3-h)
+```java
+package com.groupdrop.reconciliation;
+
+import com.groupdrop.payment.AbstractPaymentIntegrationTest;
+import com.groupdrop.settlement.SettlementRepository;
+import com.groupdrop.settlement.SettlementScheduler;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+/**
+ * V3 검증관 측정 전용 (커밋하지 않음). 3-h: 유예기간(7일)이 지난 캠페인의 오래된 불일치가
+ * 동시 대사 한 쌍 뒤 정기 정산 스캔(SettlementScheduler.runOnce)에서 어떻게 되는지. 1회 실행.
+ */
+class V3ConcurrentSettlementMeasureTest extends AbstractPaymentIntegrationTest {
+
+    @Autowired
+    private ReconciliationService reconciliations;
+    @Autowired
+    private SettlementRepository settlements;
+    @Autowired
+    private SettlementScheduler settlementScheduler;
+
+    @Test
+    void m3h() throws Exception {
+        OrderFixture order = order(10, 1);
+        Long paymentId = pay(order).body().id();
+        outboxWorker.drain();
+        pgClient.reset(); // PG 기록 소실 대역 → MISSING_PROVIDER
+        jdbc.update("""
+                UPDATE payments SET created_at = created_at - interval '9 days',
+                                    approved_at = approved_at - interval '9 days' WHERE id=?
+                """, paymentId);
+        closeCampaign(order.campaignId(), 8);
+
+        reconciliations.run(30);
+        long c0 = settlements.countOpenDiscrepancies(order.campaignId());
+
+        String o1;
+        String o2;
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            CountDownLatch start = new CountDownLatch(1);
+            Future<String> r1 = executor.submit(() -> runAfter(start));
+            Future<String> r2 = executor.submit(() -> runAfter(start));
+            start.countDown();
+            o1 = r1.get(30, TimeUnit.SECONDS);
+            o2 = r2.get(30, TimeUnit.SECONDS);
+        }
+        long c1 = settlements.countOpenDiscrepancies(order.campaignId());
+
+        settlementScheduler.runOnce();
+        List<String> batches = settlements.findBatchesOfCampaign(order.campaignId()).stream()
+                .map(b -> b.payeeType() + ":" + b.status() + (b.holdReason() == null ? "" : "(" + b.holdReason() + ")"))
+                .toList();
+        System.out.println("MEASURE3h open after sequential run(30)=" + c0 + " concurrent pair=[" + o1 + ", " + o2
+                + "] open after pair=" + c1);
+        System.out.println("MEASURE3h settlement scheduler batches=" + batches + " PAYOUT ledger tx="
+                + count("ledger_transactions", "transaction_type='PAYOUT' AND campaign_id=" + order.campaignId()));
+    }
+
+    private String runAfter(CountDownLatch start) throws InterruptedException {
+        start.await();
+        try {
+            return "OK " + reconciliations.run(30).status();
+        } catch (RuntimeException exception) {
+            return "EX " + exception.getClass().getSimpleName();
+        }
+    }
+}
+```
+
+## 5. 재현 방법
+
+<worktree>는 임의의 빈 디렉터리다. Docker가 실행 중이어야 한다. 클래스마다 약 20초.
+
+```bash
+# 1. worktree 생성
+git worktree add --detach <worktree>/wt-before d4f0a3a
+git worktree add --detach <worktree>/wt-after  32cc5da
+
+# 2. 측정 테스트 2개 복사 (이 파일 4절의 소스를 각 파일명으로 저장)
+for v in before after; do
+  cp <path>/V3ReconciliationMeasureTest.java <path>/V3ConcurrentSettlementMeasureTest.java \
+     <worktree>/wt-$v/app/src/test/java/com/groupdrop/reconciliation/
+done
+
+# 3. 실행 (before, after 각각)
+cd <worktree>/wt-before/app && ./gradlew test --tests 'com.groupdrop.reconciliation.V3ReconciliationMeasureTest' -i
+cd <worktree>/wt-before/app && ./gradlew test --tests 'com.groupdrop.reconciliation.V3ConcurrentSettlementMeasureTest' -i
+cd <worktree>/wt-after/app  && ./gradlew test --tests 'com.groupdrop.reconciliation.V3ReconciliationMeasureTest' -i
+cd <worktree>/wt-after/app  && ./gradlew test --tests 'com.groupdrop.reconciliation.V3ConcurrentSettlementMeasureTest' -i
+```
+
+측정 뒤 정리: `git worktree remove --force <worktree>/wt-before` (after도 같다).
+
+## 6. 이 측정이 말하지 않는 것
+
+- 운영 환경에서 두 서버의 대사가 겹치는 빈도.
+- 서로 다른 서버의 주기가 계속 겹칠 때 매번 다시 닫히는지(추론이며 측정하지 않았다).
+- 수정 전에도 다음 대사에서 불일치가 새 행으로 다시 열린다는 점은 3-d로 확인했다. 잘못 닫힌 동안 보류가 걸리지 않은 것이지, 보류가 자동으로 풀린 것이 아니다.

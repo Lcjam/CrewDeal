@@ -1,0 +1,147 @@
+# 정정 주석 (2026-09-29, 아래 측정 기록은 고치지 않았다)
+#
+# - 측정 2(멱등 키 고착, d3fd7c3)의 해석 중 "이 409는 최대 24시간 지속된다"의 24시간은 멱등 키 레코드의 수명이다.
+#   결제 요청은 키 조회보다 주문 상태 검사를 먼저 하므로, 주문이 확정되거나 만료되면 같은 키도 ORDER_NOT_PAYABLE을 받는다.
+#   새 키로 재결제하는 동작은 수정 전후가 같다. 사후 검증에서 이 해석은 과장으로 판정됐다.
+# - 측정 2의 "이중 청구 후 환불"은 "같은 키 재시도가 두 번째 PG 승인 뒤 자동 보상 환불 경로에 들어간다"로 읽어야 한다.
+#   같은 창은 새 키로도 열린다. "재시도가 24시간 막힌다"는 주장도 사실이 아니어서, 측정 2는 보고서 04에서 다루지 않는다.
+# - "운영에서는 이 창이 Outbox 폴링 주기만큼 열려 있다"는 측정하지 않은 서술이다.
+# - 머리말의 "문제해결 3슬라이드 콘티 v2"는 비공개 작업 문서 이름이다. "슬라이드에 쓸 때는"은
+#   "인용할 때는"으로 읽는다.
+# - MEASURE 원문과 수치는 고치지 않았다.
+# - 측정 스크립트 작성과 실행은 포트폴리오 정리 과정(2026-09-27~28)에서 AI 코딩 에이전트(Claude Code)로 했다.
+
+# 수정 전/후 재현 측정 (문제해결 3슬라이드 콘티 v2의 "측정 후 기입" 항목)
+
+측정 날짜: 2026-09-27 (KST)
+환경: WSL2 (Linux 6.18) / Docker Desktop 29.7.2 / OpenJDK 21.0.12 / Testcontainers PostgreSQL
+방법: 커밋마다 git worktree를 만들고 측정 전용 테스트 파일(커밋하지 않음)을 넣어 Gradle로 실행.
+      커밋 해시는 모두 `git worktree add --detach`로 체크아웃한 그대로이며, 측정 파일 외의 변경은 없다.
+      stdout의 "MEASURE" 줄을 발췌했다 (Gradle -i 로그에서 앞 공백만 제거).
+
+## 1. 요약표
+
+| 측정 | 조건 | before (커밋) | after (커밋) | 반복 횟수 |
+|---|---|---|---|---|
+| 1 취소↔결제 write skew | A 자연 경쟁 (PG 지연 50ms, 동시 시작) | 위반 98/100 (1527762 = efc62e4^) | 위반 0/100 (efc62e4) | 100 |
+| 1 취소↔결제 write skew | B 경쟁 창 (payments BEFORE INSERT pg_sleep 0.2, 취소 +50ms) | 위반 100/100 (1527762) | 위반 0/100 (efc62e4) | 100 |
+| 2-a 멱등 키 고착 | 크래시 → 1h backdate → scheduledSweep → 같은 키 재시도 | 409 IDEMPOTENCY_REQUEST_IN_PROGRESS, 선점 IN_PROGRESS 유지, PG 추가 호출 0, 결제 1행 (55dadea = d3fd7c3^) | 202 재생 (body UNKNOWN, 같은 결제 id), 선점 COMPLETED/202, PG 추가 호출 0, 결제 1행 (d3fd7c3) | 1 (결정적) |
+| 2-b 삭제안 (releaseStale) | 크래시 → 결제 SQL로 SUCCEEDED, 주문 PENDING_PAYMENT → releaseStale → 같은 키 재시도 | 두 번째 PG 승인 나감 (confirmCount +1), 결제 2행 [SUCCEEDED, SUPERSEDED], 응답 409 SUPERSEDED, 보상 환불 1건 (55dadea) | 해당 없음 (after에서 releaseStale 제거됨) | 1 (결정적) |
+| 3-a 대사 cutoff 오해소 | 30초 전 PG 단독 거래 주입 → run(0) → run(30) | run(30) 뒤 MISSING_INTERNAL이 RESOLVED("재검출되지 않아 자동 해소") (d4f0a3a = 32cc5da^) | run(30) 뒤에도 OPEN 유지 (32cc5da) | 1 (결정적) |
+| 3-b 정산 영향 | 30초 전 SUCCEEDED 결제(PG에 없음 → MISSING_PROVIDER) → run(0) → run(30) | countOpenDiscrepancies(campaign): 1 → 0 (지급 보류 근거가 사라짐) (d4f0a3a) | 1 → 1 (32cc5da) | 1 (결정적) |
+| 3-c 동시 실행 | startRun 연속 2회 | 두 번째 성공, RUNNING 2행 (d4f0a3a) | 두 번째 ReconciliationAlreadyRunningException, RUNNING 1행 (32cc5da) | 1 (결정적) |
+
+## 2. 실행 명령과 MEASURE 출력 원문
+
+### 측정 1 — 커밋 efc62e4 (before: efc62e4^ = 1527762)
+측정 파일: app/src/test/java/com/groupdrop/payment/CancelPayRaceMeasureTest.java (양쪽 동일)
+한 회 = 주문 1건 생성 → 결제 요청 스레드 + 취소 스레드 실행 → "주문 CANCELLED + payments에 SUCCEEDED/REFUNDING/REFUNDED"면 위반.
+결과 분포: 성공이면 OK:<상태>, ApiException이면 ApiException:<코드>, 그 밖의 예외는 클래스명 (RuntimeException 전체 포착).
+조건 A: CountDownLatch로 두 스레드 동시 시작, StubPgClient.setDuringConfirm(sleep 50ms).
+조건 B: 테스트에서 함수 measure_payments_sleep()(PERFORM pg_sleep(0.2)) + payments BEFORE INSERT 트리거 생성,
+        결제 먼저 시작·취소는 50ms 뒤 시작, PG 지연 50ms 유지. finally에서 트리거·함수 DROP 후 pg_trigger/pg_proc 0행 확인.
+조건은 한 번씩만 실행했다 (재시도·조건 변경 없음).
+
+$ cd <worktree efc62e4^>/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceMeasureTest' -i
+MEASURE1 condition=A(natural, PG 50ms) violations=98/100
+MEASURE1 condition=A(natural, PG 50ms) pay={ApiException:ORDER_NOT_PAYABLE=2, OK:SUCCEEDED=98}
+MEASURE1 condition=A(natural, PG 50ms) cancel={OK:CANCELLED=100}
+MEASURE1 condition=A(natural, PG 50ms) final={order=CANCELLED payments=[SUCCEEDED]=98, order=CANCELLED payments=[]=2}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) violations=100/100
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) pay={OK:SUCCEEDED=100}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) cancel={OK:CANCELLED=100}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) final={order=CANCELLED payments=[SUCCEEDED]=100}
+MEASURE1 cleanup: trigger rows=0 function rows=0
+
+$ cd <worktree efc62e4>/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceMeasureTest' -i
+MEASURE1 condition=A(natural, PG 50ms) violations=0/100
+MEASURE1 condition=A(natural, PG 50ms) pay={ApiException:ORDER_NOT_PAYABLE=8, OK:SUCCEEDED=92}
+MEASURE1 condition=A(natural, PG 50ms) cancel={ApiException:PAYMENT_NOT_SETTLED=92, OK:CANCELLED=8}
+MEASURE1 condition=A(natural, PG 50ms) final={order=CANCELLED payments=[]=8, order=PENDING_PAYMENT payments=[SUCCEEDED]=92}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) violations=0/100
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) pay={OK:SUCCEEDED=100}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) cancel={ApiException:PAYMENT_NOT_SETTLED=100}
+MEASURE1 condition=B(trigger pg_sleep 200ms, cancel +50ms) final={order=PENDING_PAYMENT payments=[SUCCEEDED]=100}
+MEASURE1 cleanup: trigger rows=0 function rows=0
+
+해석: before는 두 조건 모두 "취소 성공 + 결제 성공"이 동시에 성립했다. 조건 A에서 위반이 아닌 2건은
+취소가 먼저 커밋돼 결제 준비가 CANCELLED를 읽고 ORDER_NOT_PAYABLE로 거부된 경우다.
+after는 결제 준비가 주문 행을 FOR UPDATE로 잠가 취소가 결제 결과를 보고 PAYMENT_NOT_SETTLED(409)로 거부되거나,
+취소가 먼저면 결제가 ORDER_NOT_PAYABLE(409)로 거부된다. before에서 IllegalStateException(markProcessing 실패)은 관측되지 않았다.
+
+### 측정 2 — 커밋 d3fd7c3 (before: d3fd7c3^ = 55dadea)
+측정 파일: app/src/test/java/com/groupdrop/payment/IdempotencyStuckMeasureTest.java (양쪽 동일, 2-a)
+          app/src/test/java/com/groupdrop/payment/IdempotencyReleaseStaleMeasureTest.java (before에만, 2-b)
+backdate 방법 (양쪽 동일): payments.created_at과 idempotency_requests.created_at을 3600초 과거로.
+  선점은 scope+idempotency_key로 지정했다 (before에는 선점의 resource_id 연결이 없어 after 테스트의 resource_id 방식을 쓸 수 없음).
+  고아 임계는 6초(PG 타임아웃 × 2)이므로 3600초는 충분히 넘는다.
+claim.expires_at-created_at은 backdate 전에 읽은 값이다.
+
+$ cd <worktree d3fd7c3^>/app && ./gradlew test --tests 'com.groupdrop.payment.IdempotencyStuckMeasureTest' --tests 'com.groupdrop.payment.IdempotencyReleaseStaleMeasureTest' -i
+MEASURE2b crash call result=IllegalStateException: measure: crash during PG call payment=PROCESSING
+MEASURE2b before release: payment=SUCCEEDED order=PENDING_PAYMENT
+MEASURE2b releaseStale deleted=1 retry same key=HTTP 409 body.status=SUPERSEDED body.id=2
+MEASURE2b confirmCount diff=1 payments rows=2 (id,status)=[1:SUCCEEDED, 2:SUPERSEDED] order=PENDING_PAYMENT refunds(compensation)=1
+MEASURE2b outbox PENDING before=0 after=1
+MEASURE2a crash call result=IllegalStateException: measure: crash during PG call
+MEASURE2a after crash: payment=PROCESSING claim=IN_PROGRESS claim.expires_at-created_at=1 day
+MEASURE2a after sweep: payment=UNKNOWN claim=IN_PROGRESS claim.response_status=null
+MEASURE2a retry same key=HTTP 409 IDEMPOTENCY_REQUEST_IN_PROGRESS
+MEASURE2a confirmCount diff=0 payments rows=1 statuses=[UNKNOWN]
+
+$ cd <worktree d3fd7c3>/app && ./gradlew test --tests 'com.groupdrop.payment.IdempotencyStuckMeasureTest' -i
+MEASURE2a crash call result=IllegalStateException: measure: crash during PG call
+MEASURE2a after crash: payment=PROCESSING claim=IN_PROGRESS claim.expires_at-created_at=1 day
+MEASURE2a after sweep: payment=UNKNOWN claim=COMPLETED claim.response_status=202
+MEASURE2a retry same key=HTTP 202 body.status=UNKNOWN body.id=1
+MEASURE2a confirmCount diff=0 payments rows=1 statuses=[UNKNOWN]
+
+해석 (2-a): before는 스윕이 결제를 UNKNOWN으로 옮긴 뒤에도 선점이 IN_PROGRESS로 남아 같은 키가 409를 받는다.
+  선점 수명(expires_at - created_at)이 1 day이므로 이 409는 최대 24시간 지속된다. after는 202 UNKNOWN을 재생한다.
+  양쪽 모두 재시도가 PG를 다시 부르지 않았다 (confirmCount 차이 0, 결제 1행).
+해석 (2-b): 선점을 지우면 같은 키가 새 요청이 된다. 주문이 아직 PENDING_PAYMENT이고 기존 결제가 SUCCEEDED
+  (hasNonFinalPayment의 대상 아님)라서 준비를 통과해 두 번째 PG 승인이 실제로 나갔다 (confirmCount +1).
+  두 번째 결제는 부분 유니크/확정 단계에서 SUPERSEDED로 종결되고 보상 환불 1건이 접수됐다 — 즉 이중 청구 후 환불.
+Outbox/Inbox 워커: 테스트 기반 클래스가 outbox/inbox 폴링 간격을 1h로 두어 @Scheduled(fixedDelay)가
+  컨텍스트 기동 직후 1회 돈 뒤 1시간 동안 다시 돌지 않는다. 측정은 20초 안에 끝났으므로 측정 도중 스케줄 실행은 없다.
+  근거: 2-b 종료 시 outbox PENDING 이벤트 1건이 처리되지 않은 채 남았고 주문도 PENDING_PAYMENT 그대로였다.
+  영향: "웹훅은 확정했지만 Outbox가 아직 주문을 PAID로 옮기지 못한" 창을 테스트가 고정할 수 있었다.
+  운영에서는 이 창이 Outbox 폴링 주기만큼 열려 있다.
+
+### 측정 3 — 커밋 32cc5da (before: 32cc5da^ = d4f0a3a)
+측정 파일: app/src/test/java/com/groupdrop/reconciliation/ReconciliationCutoffMeasureTest.java (양쪽 동일)
+3-a: StubPgClient.injectTransaction(30초 전, SUCCEEDED, 내부 주문 없음) → run(0) → run(30).
+3-b: 캠페인 주문에 PG에는 없는 SUCCEEDED 결제를 SQL로 직접 넣음 (created_at/approved_at = 30초 전) → MISSING_PROVIDER.
+     결제 경로(pay)를 쓰면 StubPgClient에 거래가 남아 MISSING_PROVIDER가 생기지 않으므로 SQL로 만들었다.
+3-c: ReconciliationRepository.startRun(0), startRun(30) 연속 호출 → failRun으로 RUNNING 정리 후 0행 확인.
+
+$ cd <worktree 32cc5da^>/app && ./gradlew test --tests 'com.groupdrop.reconciliation.ReconciliationCutoffMeasureTest' -i
+MEASURE3a after run(0): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3a after run(30): [{discrepancy_type=MISSING_INTERNAL, status=RESOLVED, resolution_note=다음 대사에서 재검출되지 않아 자동 해소}]
+MEASURE3c first=4 second=SUCCESS runId=5 RUNNING rows=2
+MEASURE3c after cleanup RUNNING rows=0
+MEASURE3b after run(0): countOpenDiscrepancies(campaign)=1 rows=[{discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3b after run(30): countOpenDiscrepancies(campaign)=0 rows=[{discrepancy_type=MISSING_PROVIDER, status=RESOLVED, resolution_note=다음 대사에서 재검출되지 않아 자동 해소}]
+
+$ cd <worktree 32cc5da>/app && ./gradlew test --tests 'com.groupdrop.reconciliation.ReconciliationCutoffMeasureTest' -i
+MEASURE3a after run(0): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3a after run(30): [{discrepancy_type=MISSING_INTERNAL, status=OPEN, resolution_note=null}]
+MEASURE3c first=4 second=EXCEPTION com.groupdrop.reconciliation.ReconciliationRepository$ReconciliationAlreadyRunningException RUNNING rows=1
+MEASURE3c after cleanup RUNNING rows=0
+MEASURE3b after run(0): countOpenDiscrepancies(campaign)=1 rows=[{discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+MEASURE3b after run(30): countOpenDiscrepancies(campaign)=1 rows=[{discrepancy_type=MISSING_PROVIDER, status=OPEN, resolution_note=null}]
+
+해석: before의 resolveDisappeared는 "이번 run이 보지 않은 OPEN 불일치"를 cutoff와 무관하게 닫는다.
+  30분 cutoff 대사는 30초 전 거래를 범위 밖이라 보지 못하므로, 즉시 대사(run(0))가 연 불일치를 자동 해소한다.
+  3-b에서 그 결과 캠페인의 countOpenDiscrepancies가 1 → 0이 되어 정산 지급 전 대조(SET-02)의 보류 근거가 사라졌다.
+  after는 두 불일치 모두 OPEN을 유지하고 count도 1로 남는다.
+  3-c: before는 RUNNING 대사가 둘 동시에 존재할 수 있고, after는 DB가 두 번째를 거부한다.
+
+## 3. 재현이 안 된 항목과 그 이유
+
+없음. 모든 항목이 계획한 조건 그대로 한 번에 재현됐다 (조건 변경·재시도 없음).
+참고 사항:
+- 1-A는 "자연 경쟁"이지만 테스트의 두 스레드가 같은 JVM에서 래치로 동시에 출발하므로, 운영 트래픽에서의 발생 빈도를 뜻하지 않는다.
+  슬라이드에 쓸 때는 "같은 테스트 조건에서 98/100"으로 적는다.
+- 2-b와 3-b는 결제 상태를 SQL로 직접 만들었다 (웹훅 확정·PG 누락 상황의 대역). 결제 경로 자체의 동작이 아니라 그 뒤 단계를 잰 것이다.
+- 측정 파일은 저장소에 커밋하지 않았다. 워크트리는 스크래치 디렉터리에만 있다.

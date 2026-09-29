@@ -1,0 +1,367 @@
+측정 주체: 측정 스크립트 작성과 실행은 포트폴리오 정리 과정(2026-09-27~28)에서 AI 코딩 에이전트(Claude Code)로 했다. 조건은 실행 전에 고정했고 결과를 그대로 옮겼다. 사후 재측정이며 원하는 값이 나올 때까지 반복하지 않았다.
+
+# 주제 3. 서버 2대 동시 기동 시 시드 계정 경쟁 (수정 전/후 재측정)
+
+측정 날짜: 2026-09-28 (KST). 컨테이너 로그 시각은 UTC(2026-09-28T07:33~)다.
+대상 커밋: 수정 = 2141631, 수정 전 = 2141631^ (= e9c21d0)
+환경: WSL2 (Linux 6.18) / Docker Desktop 29.7.2 / OpenJDK 21.0.12 / Testcontainers postgres:16-alpine (8스레드 측정) / docker compose v2 / 로컬. 운영 환경이 아니다. (Docker Desktop 29.7.2는 09-28 측정 시작 전 `docker info`로 확인한 값이다. 호스트 OpenJDK 버전은 09-28에 따로 기록하지 않았고, 같은 머신의 전날(2026-09-27) 측정 기록 값이다)
+      구성: 저장소의 docker-compose.yml + docker-compose.two-instances.yml (앱 2대 오버레이, release-gate.sh의 start_two_instance_stack과 같은 조합).
+      postgres, mock-pg, app, app2를 격리된 compose 프로젝트로 띄웠다 (프로젝트 이름 crewdeal-v4-before / crewdeal-v4-after, 기본 스택과 겹치지 않는 포트).
+        before: APP_PORT=28080 APP2_PORT=28081 MOCK_PG_PORT=28082 POSTGRES_PORT=25432
+        after:  APP_PORT=28090 APP2_PORT=28091 MOCK_PG_PORT=28092 POSTGRES_PORT=25442
+한계: 20회는 확률적 경쟁의 표본 하나이며 발생률의 정밀한 추정치가 아니다. 컨테이너 기동 지터는 호스트 성능·부하·Docker 버전·디스크 I/O에 따라 달라진다.
+      after 0/20은 "이번 20회 표본에서 재현되지 않았다"이지 확률이 0이라는 증명이 아니다.
+      당시(2026-09-26) 기록은 결정 로그와 커밋 메시지의 "두 인스턴스 동시 기동 10회 중 2회 재현"이다. 이 파일의 6/20은 그와 별개의 사후 표본이다.
+
+## 주의 (이미지 태그)
+
+이 스크립트는 groupdrop-app:local 이미지 태그를 덮어쓴다. 측정 뒤 main에서 `docker compose build app mock-pg`로 되돌린다.
+
+## 1. 요약
+
+| 항목 | before (2141631^ = e9c21d0) | after (2141631) |
+|---|---|---|
+| 빈 DB에 app+app2 동시 기동 20회 중 컨테이너 종료(EXIT) | 6회 (rep 1, 3, 5, 6, 15, 17) | 0회 |
+| EXIT 6회의 로그 | 모두 users_email_key UNIQUE 위반 (admin@groupdrop.test) | 해당 없음 |
+| 8스레드 동시 시드, 5회 반복 (SeedDataConcurrencyMeasureTest) | 5/5 반복 실패 (매 반복 8스레드 중 7개 실패) | 5/5 통과 (저장소의 SeedDataConcurrencyTest 그대로 실행) |
+
+집계 명령: `grep -c ',EXIT,' before-summary.csv` 는 6, `grep -c ',EXIT,' after-summary.csv` 는 0.
+before에서 종료한 쪽은 회차마다 app 또는 app2로 갈렸다.
+
+수정 전 코드에서는 SeedDataConcurrencyTest가 컴파일되지 않는다. 그 테스트가 부르는 seed(...) 메서드가 수정 커밋에서 생겼기 때문이다.
+그래서 수정 전 8스레드 측정은 수정 전 SeedDataRunner.run(ApplicationArguments)을 8스레드에서 직접 부르는 측정 전용 테스트(4절)로 했고,
+수정 후는 저장소의 회귀 테스트를 그대로 실행했다. 두 테스트는 같은 테스트가 아니다.
+
+## 2. 절차 (매 회차 동일, 조건 변경 없음)
+
+1. `docker compose -p <project> ... down -v --remove-orphans` : 이전 회차 DB 볼륨을 지워 빈 DB로 시작한다.
+2. `docker compose -p <project> ... up -d postgres mock-pg app app2` : 이미지는 회차 시작 전 1회만 빌드해 재사용한다.
+3. 45초(SETTLE_TIME) 동안 2초 간격으로 docker inspect로 app/app2 상태를 폴링한다. 어느 한쪽이라도 exited가 되면 즉시 EXIT, 45초 내내 살아 있으면 OK.
+   - 45초의 근거: 보정 실행에서 정상 기동 시 "Started GroupdropApplication in 11.2~11.6초"를 확인했다. 문제의 SeedDataRunner(ApplicationRunner)는 이 로그 직후 실행되고, 예외가 나면 프로세스가 바로 종료된다(재시작 정책 없음).
+   - 처음 짠 "둘 다 running이면 5초 뒤 OK" 방식은 docker의 running이 JVM 프로세스가 뜬 순간부터 참이라는 것을 로그로 확인하고 폐기했다. 최종안이 이 스크립트다.
+4. `docker compose ... logs app app2`를 회차별 로그로 저장하고 users_email_key 문자열 유무를 CSV에 기록한다.
+5. down -v로 정리하고 다음 회차로 간다.
+
+조건(45초, 2초 폴링, 20회)은 시작 전에 고정했고, 원하는 숫자가 나올 때까지 다시 돌리지 않았다.
+스크립트 감지 로직을 확인하려는 사전 스모크 실행(별도 프로젝트 이름 1회 + 보정 관찰 1회)은 있었으나 이 수치에 포함하지 않았고 조건도 바꾸지 않았다.
+
+## 3. 측정 스크립트 전문 (measure-boot-race.sh)
+
+```bash
+#!/usr/bin/env bash
+# V4 재작업: 빈 DB에 app+app2를 동시에 띄우는 실제 시나리오를 REPS회 반복해
+# users_email_key 경쟁이 몇 번 재현되는지 직접 측정한다.
+#
+# docker-compose.two-instances.yml/release-gate.sh가 쓰는 것과 같은 구성(postgres+mock-pg+app+app2,
+# app/app2 모두 postgres service_healthy에 depends_on)을 그대로 쓴다. 격리된 프로젝트 이름과
+# 기본값과 겹치지 않는 포트만 쓰고, 각 회차 전에 down -v로 볼륨을 비운다.
+#
+# 사용:
+#   WORKTREE=<dir> PROJECT=<name> APP_PORT=.. APP2_PORT=.. MOCK_PG_PORT=.. POSTGRES_PORT=.. \
+#     REPS=20 LABEL=before OUT_DIR=<dir> ./measure-boot-race.sh
+set -euo pipefail
+
+WORKTREE="${WORKTREE:?WORKTREE required}"
+PROJECT="${PROJECT:?PROJECT required}"
+APP_PORT="${APP_PORT:?APP_PORT required}"
+APP2_PORT="${APP2_PORT:?APP2_PORT required}"
+MOCK_PG_PORT="${MOCK_PG_PORT:?MOCK_PG_PORT required}"
+POSTGRES_PORT="${POSTGRES_PORT:?POSTGRES_PORT required}"
+REPS="${REPS:-20}"
+LABEL="${LABEL:?LABEL required (before|after)}"
+OUT_DIR="${OUT_DIR:?OUT_DIR required}"
+POLL_INTERVAL=2
+# 보정 실행(calibration)에서 "Started GroupdropApplication in 11.3s" (app), 11.6s (app2)를
+# 확인했다 (SeedDataRunner 포함, ApplicationRunner는 이 로그 직후 실행됨). exit 여부를 성급하게
+# "running"만 보고 판단하지 않도록, 컨테이너가 죽지 않고 SETTLE_TIME(관측 대비 약 3.7배 여유)
+# 동안 계속 살아 있어야만 OK로 확정한다. exit는 언제 감지되든 즉시 EXIT로 확정한다.
+SETTLE_TIME=45
+
+mkdir -p "${OUT_DIR}/logs"
+SUMMARY_CSV="${OUT_DIR}/${LABEL}-summary.csv"
+echo "rep,outcome,app_status,app_exit_code,app2_status,app2_exit_code,unique_violation_in_logs" > "${SUMMARY_CSV}"
+
+COMPOSE_FILES=(-f "${WORKTREE}/docker-compose.yml" -f "${WORKTREE}/docker-compose.two-instances.yml")
+
+teardown() {
+  docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" down -v --remove-orphans > /dev/null 2>&1 || true
+}
+trap teardown EXIT INT TERM
+
+echo "== [$LABEL] 기존 프로젝트 확인 =="
+existing="$(docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" ps -aq || true)"
+if [[ -n "${existing}" ]]; then
+  echo "compose project ${PROJECT} already has containers; refusing to start (inspect/remove manually)" >&2
+  exit 2
+fi
+
+echo "== [$LABEL] 이미지 빌드 (1회) =="
+export APP_PORT APP2_PORT MOCK_PG_PORT POSTGRES_PORT
+docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" build mock-pg app app2
+
+for ((rep = 1; rep <= REPS; rep++)); do
+  echo "== [$LABEL] rep ${rep}/${REPS}: down -v (빈 DB로) =="
+  docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" down -v --remove-orphans > /dev/null 2>&1 || true
+
+  echo "== [$LABEL] rep ${rep}/${REPS}: postgres+mock-pg+app+app2 동시 기동 =="
+  docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" up -d postgres mock-pg app app2
+
+  outcome="OK"
+  app_status="unknown"; app_exit="?"; app2_status="unknown"; app2_exit="?"
+  elapsed=0
+  while ((elapsed < SETTLE_TIME)); do
+    app_info="$(docker inspect -f '{{.State.Status}}|{{.State.ExitCode}}' "${PROJECT}-app-1" 2>/dev/null || echo 'missing|?')"
+    app2_info="$(docker inspect -f '{{.State.Status}}|{{.State.ExitCode}}' "${PROJECT}-app2-1" 2>/dev/null || echo 'missing|?')"
+    app_status="${app_info%%|*}"; app_exit="${app_info##*|}"
+    app2_status="${app2_info%%|*}"; app2_exit="${app2_info##*|}"
+
+    if [[ "${app_status}" == "exited" || "${app2_status}" == "exited" ]]; then
+      outcome="EXIT"
+      break
+    fi
+
+    sleep "${POLL_INTERVAL}"
+    elapsed=$((elapsed + POLL_INTERVAL))
+  done
+  # SETTLE_TIME(45초, 관측된 정상 기동 시간 11~12초의 약 3.7배) 동안 죽지 않으면 OK로 확정한다.
+  # exit는 감지 즉시 확정한다(재시작 정책이 없어 exited 상태가 그대로 유지됨).
+
+  log_file="${OUT_DIR}/logs/${LABEL}-rep${rep}.log"
+  {
+    echo "=== app ==="
+    docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" logs app 2>&1 || true
+    echo "=== app2 ==="
+    docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" logs app2 2>&1 || true
+  } > "${log_file}"
+
+  violation="no"
+  grep -q "users_email_key" "${log_file}" && violation="yes"
+
+  echo "${rep},${outcome},${app_status},${app_exit},${app2_status},${app2_exit},${violation}" | tee -a "${SUMMARY_CSV}"
+
+  docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" down -v --remove-orphans > /dev/null 2>&1 || true
+done
+
+echo "== [$LABEL] 완료: ${SUMMARY_CSV} =="
+cat "${SUMMARY_CSV}"
+```
+
+## 4. 8스레드 측정 테스트 소스 전문 (SeedDataConcurrencyMeasureTest.java)
+
+수정 전(2141631^) worktree의 app/src/test/java/com/groupdrop/user/ 아래에 넣어 실행했다. 커밋하지 않았다.
+명령: cd <worktree>/app && ./gradlew test --tests 'com.groupdrop.user.SeedDataConcurrencyMeasureTest' -i
+출력 요약(측정 기록): 매 반복 `MEASURE-V4 failures=7/8`, `5 tests completed, 5 failed`, BUILD FAILED. 이 8스레드 측정의 Gradle 원시 출력은 보존하지 않았다.
+수정 후(2141631)는 저장소의 `SeedDataConcurrencyTest`를 그대로 실행해 `5 tests completed, 0 failed`, BUILD SUCCESSFUL.
+
+```java
+package com.groupdrop.user;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.groupdrop.TestcontainersConfiguration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * MEASURE ONLY test, not part of any commit. Reproduces the pre-fix find-then-save race by
+ * calling the old SeedDataRunner.run(ApplicationArguments) concurrently from 8 threads against
+ * the same fixed seed emails -- exactly like two app instances booting together on an empty
+ * database (2026-09-25 release gate docker-kill stage scenario).
+ *
+ * Used only against the BEFORE worktree (2141631^ = e9c21d0). The AFTER worktree already ships
+ * the real regression test app/src/test/java/com/groupdrop/user/SeedDataConcurrencyTest.java,
+ * which was run as-is (not this file).
+ */
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
+class SeedDataConcurrencyMeasureTest {
+
+    private static final int INSTANCES = 8;
+
+    @Autowired
+    private SeedDataRunner seedDataRunner;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void clearSeedRows() {
+        jdbc.update("DELETE FROM influencers WHERE user_id IN "
+                + "(SELECT id FROM users WHERE email LIKE '%@groupdrop.test')");
+        jdbc.update("DELETE FROM suppliers WHERE user_id IN "
+                + "(SELECT id FROM users WHERE email LIKE '%@groupdrop.test')");
+        jdbc.update("DELETE FROM users WHERE email LIKE '%@groupdrop.test'");
+    }
+
+    @RepeatedTest(5)
+    void 동시에_시드하면_구코드는_유니크_위반으로_죽는다() throws Exception {
+        CountDownLatch ready = new CountDownLatch(INSTANCES);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> results = new ArrayList<>();
+        AtomicInteger failures = new AtomicInteger();
+        try (ExecutorService executor = Executors.newFixedThreadPool(INSTANCES)) {
+            for (int i = 0; i < INSTANCES; i++) {
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    seedDataRunner.run(new DefaultApplicationArguments());
+                    return null;
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (Future<?> result : results) {
+                try {
+                    result.get(30, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                    System.out.println("MEASURE-V4 thread failed: " + e.getCause());
+                }
+            }
+        }
+        System.out.println("MEASURE-V4 failures=" + failures.get() + "/" + INSTANCES);
+        assertThat(failures.get()).isEqualTo(0);
+    }
+}
+```
+
+## 5. 회차별 결과 원문 (CSV)
+
+### before-summary.csv (2141631^, 20회)
+```
+rep,outcome,app_status,app_exit_code,app2_status,app2_exit_code,unique_violation_in_logs
+1,EXIT,exited,1,running,0,yes
+2,OK,running,0,running,0,no
+3,EXIT,running,0,exited,1,yes
+4,OK,running,0,running,0,no
+5,EXIT,exited,1,running,0,yes
+6,EXIT,running,0,exited,1,yes
+7,OK,running,0,running,0,no
+8,OK,running,0,running,0,no
+9,OK,running,0,running,0,no
+10,OK,running,0,running,0,no
+11,OK,running,0,running,0,no
+12,OK,running,0,running,0,no
+13,OK,running,0,running,0,no
+14,OK,running,0,running,0,no
+15,EXIT,running,0,exited,1,yes
+16,OK,running,0,running,0,no
+17,EXIT,exited,1,running,0,yes
+18,OK,running,0,running,0,no
+19,OK,running,0,running,0,no
+20,OK,running,0,running,0,no
+```
+
+### after-summary.csv (2141631, 20회)
+```
+rep,outcome,app_status,app_exit_code,app2_status,app2_exit_code,unique_violation_in_logs
+1,OK,running,0,running,0,no
+2,OK,running,0,running,0,no
+3,OK,running,0,running,0,no
+4,OK,running,0,running,0,no
+5,OK,running,0,running,0,no
+6,OK,running,0,running,0,no
+7,OK,running,0,running,0,no
+8,OK,running,0,running,0,no
+9,OK,running,0,running,0,no
+10,OK,running,0,running,0,no
+11,OK,running,0,running,0,no
+12,OK,running,0,running,0,no
+13,OK,running,0,running,0,no
+14,OK,running,0,running,0,no
+15,OK,running,0,running,0,no
+16,OK,running,0,running,0,no
+17,OK,running,0,running,0,no
+18,OK,running,0,running,0,no
+19,OK,running,0,running,0,no
+20,OK,running,0,running,0,no
+```
+
+## 6. 로그 발췌
+
+원본 로그는 회차마다 `docker compose logs app app2` 전문(40개 파일)이다. 여기에는 두 회차의 핵심 줄만 싣는다.
+긴 줄은 끝을 생략했고 스택 중간은 (중략)으로 표시했다.
+
+### before, rep 1 (EXIT: app 컨테이너 종료). app 로그의 예외 발췌
+```
+app-1  | 2026-09-28T07:33:57.920Z  WARN 1 --- [groupdrop] [           main] org.hibernate.orm.jdbc.error             : ERROR: duplicate key value violates unique constraint "users_email_key"
+app-1  |   Detail: Key (email)=(admin@groupdrop.test) already exists.
+app-1  | 2026-09-28T07:33:57.953Z ERROR 1 --- [groupdrop] [           main] o.s.boot.SpringApplication               : Application run failed
+app-1  | org.springframework.dao.DataIntegrityViolationException: could not execute statement [ERROR: duplicate key value violates unique constraint "users_email_key"
+app-1  |   Detail: Key (email)=(admin@groupdrop.test) already exists.] [insert into users (created_at,display_name,email,password_hash,role) values (?,?,?,?,?)]; SQL [ins ...(줄 끝 생략)
+app-1  | 	at org.springframework.orm.jpa.hibernate.HibernateExceptionTranslator.convertHibernateAccessException(HibernateExceptionTranslator.java:169) ~[spring-orm-7.0.8. ...(줄 끝 생략)
+app-1  | 	at org.springframework.orm.jpa.hibernate.HibernateExceptionTranslator.convertHibernateAccessException(HibernateExceptionTranslator.java:131) ~[spring-orm-7.0.8. ...(줄 끝 생략)
+app-1  | 	at org.springframework.orm.jpa.hibernate.HibernateExceptionTranslator.translateExceptionIfPossible(HibernateExceptionTranslator.java:105) ~[spring-orm-7.0.8.jar ...(줄 끝 생략)
+app-1  | 	at org.springframework.orm.jpa.vendor.HibernateJpaDialect.translateExceptionIfPossible(HibernateJpaDialect.java:223) ~[spring-orm-7.0.8.jar!/:7.0.8]
+app-1  | 	at org.springframework.orm.jpa.AbstractEntityManagerFactoryBean.translateExceptionIfPossible(AbstractEntityManagerFactoryBean.java:577) ~[spring-orm-7.0.8.jar!/ ...(줄 끝 생략)
+app-1  | 	at org.springframework.dao.support.ChainedPersistenceExceptionTranslator.translateExceptionIfPossible(ChainedPersistenceExceptionTranslator.java:61) ~[spring-tx ...(줄 끝 생략)
+app-1  | 	at org.springframework.dao.support.DataAccessUtils.translateIfNecessary(DataAccessUtils.java:346) ~[spring-tx-7.0.8.jar!/:7.0.8]
+app-1  | 	at org.springframework.dao.support.PersistenceExceptionTranslationInterceptor.invoke(PersistenceExceptionTranslationInterceptor.java:157) ~[spring-tx-7.0.8.jar! ...(줄 끝 생략)
+app-1  | 	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:179) ~[spring-aop-7.0.8.jar!/:7.0.8]
+app-1  | 	at org.springframework.data.jpa.repository.support.CrudMethodMetadataPostProcessor$CrudMethodMetadataPopulatingMethodInterceptor.invoke(CrudMethodMetadataPostPr ...(줄 끝 생략)
+app-1  | 	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:179) ~[spring-aop-7.0.8.jar!/:7.0.8]
+app-1  | 	at org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:222) ~[spring-aop-7.0.8.jar!/:7.0.8]
+app-1  | 	at jdk.proxy2/jdk.proxy2.$Proxy167.save(Unknown Source) ~[na:na]
+app-1  | 	at com.groupdrop.user.SeedDataRunner.lambda$createUserIfAbsent$0(SeedDataRunner.java:68) ~[!/:0.0.1-SNAPSHOT]
+app-1  | 	at java.base/java.util.Optional.orElseGet(Unknown Source) ~[na:na]
+app-1  | 	at com.groupdrop.user.SeedDataRunner.createUserIfAbsent(SeedDataRunner.java:68) ~[!/:0.0.1-SNAPSHOT]
+app-1  | 	at com.groupdrop.user.SeedDataRunner.seedPlainUser(SeedDataRunner.java:49) ~[!/:0.0.1-SNAPSHOT]
+app-1  | ... (중략)
+app-1  | Caused by: org.postgresql.util.PSQLException: ERROR: duplicate key value violates unique constraint "users_email_key"
+app-1  |   Detail: Key (email)=(admin@groupdrop.test) already exists.
+```
+
+같은 회차에서 app2는 정상 기동했다.
+```
+app2-1  | 2026-09-28T07:33:57.127Z  INFO 1 --- [groupdrop] [           main] com.groupdrop.GroupdropApplication       : Started GroupdropApplication in 11.226 seconds (process running for 12.085)
+```
+
+### after, rep 1 (OK: 두 컨테이너 정상 기동)
+```
+app-1  | 2026-09-28T07:50:24.562Z  INFO 1 --- [groupdrop] [           main] com.groupdrop.GroupdropApplication       : Started GroupdropApplication in 11.867 seconds (process running for 12.739)
+app2-1  | 2026-09-28T07:50:23.973Z  INFO 1 --- [groupdrop] [           main] com.groupdrop.GroupdropApplication       : Started GroupdropApplication in 11.517 seconds (process running for 12.398)
+```
+
+## 7. 재현 방법
+
+<worktree>는 임의의 디렉터리 이름이다. Docker가 실행 중이어야 한다. 한 커밋당 20회에 십수 분이 걸린다.
+
+```bash
+# 1. worktree 생성
+git worktree add --detach <worktree>/wt-v4-before e9c21d0   # = 2141631^
+git worktree add --detach <worktree>/wt-v4-after  2141631
+
+# 2. 3절 스크립트를 measure-boot-race.sh로 저장한 뒤 before 20회
+WORKTREE=<worktree>/wt-v4-before PROJECT=crewdeal-v4-before APP_PORT=28080 APP2_PORT=28081 \
+  MOCK_PG_PORT=28082 POSTGRES_PORT=25432 REPS=20 LABEL=before OUT_DIR=<out> \
+  bash measure-boot-race.sh
+
+# 3. after 20회
+WORKTREE=<worktree>/wt-v4-after PROJECT=crewdeal-v4-after APP_PORT=28090 APP2_PORT=28091 \
+  MOCK_PG_PORT=28092 POSTGRES_PORT=25442 REPS=20 LABEL=after OUT_DIR=<out> \
+  bash measure-boot-race.sh
+
+# 4. 집계
+grep -c ',EXIT,' <out>/before-summary.csv
+grep -c ',EXIT,' <out>/after-summary.csv
+
+# 5. 이미지 태그를 되돌린다 (이 스크립트는 groupdrop-app:local 태그를 덮어쓴다)
+cd <main checkout> && docker compose build app mock-pg
+
+# 6. 정리
+git worktree remove --force <worktree>/wt-v4-before
+git worktree remove --force <worktree>/wt-v4-after
+```

@@ -1,0 +1,455 @@
+측정 주체: 측정 스크립트 작성과 실행은 포트폴리오 정리 과정(2026-09-27~28)에서 AI 코딩 에이전트(Claude Code)로 했다. 조건은 실행 전에 고정했고 결과를 그대로 옮겼다. 사후 재측정이며 원하는 값이 나올 때까지 반복하지 않았다.
+
+# 주제 1. 주문 취소와 결제 요청의 경쟁 (수정 전/후 재측정)
+
+측정 날짜: 2026-09-28 (KST). 같은 조건의 앞선 측정은 2026-09-27-before-after.txt의 "측정 1"에 있다.
+대상 커밋: 수정 = efc62e4, 수정 전 = 1527762 (efc62e4^)
+환경: WSL2 (Linux 6.18) / Docker Desktop 29.7.2 / OpenJDK 21.0.12 / Testcontainers postgres:16-alpine / 단일 JVM, 같은 커넥션 풀 / StubPgClient. (Docker Desktop 29.7.2는 09-28 측정 시작 전 `docker info`로 확인한 값이다. 호스트 OpenJDK 버전은 09-28에 따로 기록하지 않았고, 같은 머신의 전날(2026-09-27) 측정 기록 값이다)
+      psql 실험은 postgres:16.15-alpine 일회용 컨테이너.
+한계: 운영 환경이 아니다. 같은 JVM의 2스레드를 래치로 동시에 출발시킨 테스트이며 조건당 100회다.
+      "98/100"은 운영에서의 발생률이 아니라 "동시에 오면 거의 매번 뚫린다"는 뜻이다.
+      조건 A에서 위반이 아닌 2회는 취소가 먼저 커밋돼 결제 준비가 ORDER_NOT_PAYABLE로 거부된 경우다.
+방법: 변형마다 worktree를 만들고 측정 전용 테스트 1개(커밋하지 않음)를 넣어 실행했다.
+      변형 = before(1527762) / after(efc62e4) / alt2(1527762 + "결제 쪽만 잠금" 패치).
+      한 회 = 주문 1건 생성 -> 결제 요청 스레드 + 취소 스레드 -> 판정 -> outbox 소진 -> 후속 상태 기록.
+      위반 = 주문이 CANCELLED이고 payments에 SUCCEEDED/REFUNDING/REFUNDED가 있음.
+      조건 A: 두 스레드 래치 동시 출발, PG 승인 지연 50ms.
+      조건 B: payments BEFORE INSERT 트리거로 pg_sleep(0.2)를 넣어 결제 준비 구간을 넓히고, 결제 먼저 출발, 취소는 50ms 뒤 출발, PG 지연 50ms.
+      조건은 실행 전에 고정했다. 조건 A·B는 09-27(2026-09-27-before-after.txt)과 09-28에 각각 한 번씩 쟀고 두 날의 결과를 모두 공개했다. 원하는 값이 나올 때까지 반복하지 않았다.
+
+## 1. 요약
+
+| 변형 | 코드 | 조건 A 위반 | 조건 B 위반 |
+|---|---|---|---|
+| before | 1527762 | 98/100 | 100/100 |
+| alt2 (결제 쪽만 잠금) | 1527762 + 아래 패치 | 98/100 | 100/100 |
+| after | efc62e4 | 0/100 | 0/100 |
+
+alt2는 수정 전과 같은 값이다. 당시 결정 로그 D-032도 이 안을 동시성 테스트(10회) 실패로 기각했다.
+그 기각은 당시(2026-09-06) 기록이고, 위 98/100은 2026-09-28에 같은 조건으로 다시 잰 값이다.
+
+## 2. 측정 테스트 소스 전문 (CancelPayRaceV1MeasureTest.java)
+
+배치 위치: app/src/test/java/com/groupdrop/payment/CancelPayRaceV1MeasureTest.java
+변형 이름은 `getOrDefault("MEASURE_VARIANT", "?")`의 "?"를 before/after/alt2로 치환해 넣어 실행했다.
+
+```java
+package com.groupdrop.payment;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.groupdrop.common.ApiException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+
+/**
+ * V1 검증관 측정 전용 (커밋하지 않음). 조건은 실행 전에 고정했다.
+ * 한 회 = 주문 1건 생성 -> 결제 요청 스레드 + 취소 스레드 -> 판정 -> outbox 소진 -> 후속 상태 기록.
+ * 위반 = 주문 CANCELLED 이고 payments 에 SUCCEEDED/REFUNDING/REFUNDED 가 있음.
+ * 조건 A: 두 스레드 래치 동시 출발, PG 승인 지연 50ms.
+ * 조건 B: payments BEFORE INSERT 트리거 pg_sleep(0.2), 결제 먼저 출발, 취소는 50ms 뒤 출발, PG 지연 50ms.
+ */
+class CancelPayRaceV1MeasureTest extends AbstractPaymentIntegrationTest {
+
+    private static final int RUNS = 100;
+
+    @Test
+    void measure() throws Exception {
+        String variant = System.getProperty("measure.variant", System.getenv().getOrDefault("MEASURE_VARIANT", "?"));
+        run(variant, "A(natural, PG 50ms)", false);
+        try {
+            jdbc.execute("""
+                    CREATE OR REPLACE FUNCTION measure_payments_sleep() RETURNS trigger AS $$
+                    BEGIN PERFORM pg_sleep(0.2); RETURN NEW; END $$ LANGUAGE plpgsql
+                    """);
+            jdbc.execute("""
+                    CREATE TRIGGER measure_payments_sleep_trg BEFORE INSERT ON payments
+                    FOR EACH ROW EXECUTE FUNCTION measure_payments_sleep()
+                    """);
+            run(variant, "B(trigger pg_sleep 200ms, cancel +50ms)", true);
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS measure_payments_sleep_trg ON payments");
+            jdbc.execute("DROP FUNCTION IF EXISTS measure_payments_sleep()");
+            System.out.println("MEASURE_V1 variant=" + variant + " cleanup: trigger rows="
+                    + jdbc.queryForObject("SELECT count(*) FROM pg_trigger WHERE tgname='measure_payments_sleep_trg'", Long.class)
+                    + " function rows="
+                    + jdbc.queryForObject("SELECT count(*) FROM pg_proc WHERE proname='measure_payments_sleep'", Long.class));
+        }
+    }
+
+    private void run(String variant, String condition, boolean staggered) throws Exception {
+        int violations = 0;
+        Map<String, Integer> pay = new TreeMap<>();
+        Map<String, Integer> cancel = new TreeMap<>();
+        Map<String, Integer> fin = new TreeMap<>();
+        Map<String, Integer> afterDrain = new TreeMap<>();
+        Map<String, Integer> pgCalls = new TreeMap<>();
+        for (int i = 0; i < RUNS; i++) {
+            OrderFixture order = order(10, 1);
+            pgClient.reset();
+            pgClient.setDuringConfirm(() -> sleep(50));
+
+            Callable<String> payTask = () -> {
+                try {
+                    return "OK:" + paymentService.requestPayment(BUYER, order.orderId(), key(),
+                            new CreatePaymentRequest(order.totalAmount())).body().status();
+                } catch (ApiException e) {
+                    return "ApiException:" + e.getCode();
+                } catch (RuntimeException e) {
+                    return e.getClass().getSimpleName();
+                }
+            };
+            Callable<String> cancelTask = () -> {
+                try {
+                    if (staggered) {
+                        sleep(50);
+                    }
+                    return "OK:" + orderService.cancelOrder(BUYER, order.orderId()).status();
+                } catch (ApiException e) {
+                    return "ApiException:" + e.getCode();
+                } catch (RuntimeException e) {
+                    return e.getClass().getSimpleName();
+                }
+            };
+            List<String> results = runTogether(payTask, cancelTask);
+            inc(pay, results.get(0));
+            inc(cancel, results.get(1));
+            inc(pgCalls, "confirmCalls=" + pgClient.confirmCount());
+
+            String orderStatus = orderStatus(order.orderId());
+            List<String> paymentStatuses = jdbc.queryForList(
+                    "SELECT status FROM payments WHERE order_id=? ORDER BY id", String.class, order.orderId());
+            long settled = count("payments", "order_id=" + order.orderId()
+                    + " AND status IN ('SUCCEEDED','REFUNDING','REFUNDED')");
+            boolean violated = "CANCELLED".equals(orderStatus) && settled > 0;
+            if (violated) {
+                violations++;
+            }
+            inc(fin, "order=" + orderStatus + " payments=" + paymentStatuses);
+
+            while (outboxWorker.drain() > 0) {
+                // 이 회차가 남긴 payment.finalized 소진 -> 주문 후속 처리 관찰
+            }
+            long refunds = count("refunds", "order_id=" + order.orderId());
+            long skipped = count("audit_logs", "resource_type='ORDER' AND resource_id=" + order.orderId()
+                    + " AND action='ORDER_TRANSITION_SKIPPED'");
+            List<Integer> inv = inventoryOf(order.inventoryId());
+            inc(afterDrain, "order=" + orderStatus(order.orderId()) + " refunds=" + refunds
+                    + " auditSkipped=" + skipped + " inventory[init,avail,reserved,sold]=" + inv
+                    + (violated ? " (violation)" : ""));
+        }
+        String p = "MEASURE_V1 variant=" + variant + " condition=" + condition;
+        System.out.println(p + " violations=" + violations + "/" + RUNS);
+        System.out.println(p + " pay=" + pay);
+        System.out.println(p + " cancel=" + cancel);
+        System.out.println(p + " pgConfirm=" + pgCalls);
+        System.out.println(p + " final=" + fin);
+        System.out.println(p + " afterOutboxDrain=" + afterDrain);
+    }
+
+    private List<String> runTogether(Callable<String> first, Callable<String> second) throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            List<Future<String>> futures = new ArrayList<>();
+            for (Callable<String> task : List.of(first, second)) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return task.call();
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            List<String> results = new ArrayList<>();
+            for (Future<String> future : futures) {
+                results.add(future.get(30, TimeUnit.SECONDS));
+            }
+            return results;
+        }
+    }
+
+    private static void inc(Map<String, Integer> map, String key) {
+        map.merge(key, 1, Integer::sum);
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+}
+```
+
+## 3. "결제 쪽만 잠금" 대안(alt2) 패치
+
+1527762 기준. 결제 준비의 주문 조회에만 FOR UPDATE를 붙인다. 취소 쪽 코드는 그대로다.
+
+```diff
+diff --git a/app/src/main/java/com/groupdrop/payment/PaymentRepository.java b/app/src/main/java/com/groupdrop/payment/PaymentRepository.java
+index b07e4a4..ae7248c 100644
+--- a/app/src/main/java/com/groupdrop/payment/PaymentRepository.java
++++ b/app/src/main/java/com/groupdrop/payment/PaymentRepository.java
+@@ -26,7 +26,7 @@ public class PaymentRepository {
+     public Optional<OrderForPayment> findOrderForPayment(Long orderId) {
+         return jdbc.query("""
+                 SELECT id, buyer_id, status, total_amount, expires_at
+-                  FROM orders WHERE id = ?
++                  FROM orders WHERE id = ? FOR UPDATE
+                 """, (rs, rowNum) -> new OrderForPayment(rs.getLong("id"), rs.getLong("buyer_id"),
+                 rs.getString("status"), rs.getLong("total_amount"), rs.getTimestamp("expires_at").toInstant()),
+                 orderId).stream().findFirst();
+```
+
+## 4. MEASURE 원문
+
+### before - 1527762
+```
+$ cd wt-V1-before/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i   # 1527762
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) violations=98/100
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) pay={ApiException:ORDER_NOT_PAYABLE=2, OK:SUCCEEDED=98}
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) cancel={OK:CANCELLED=100}
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) pgConfirm={confirmCalls=0=2, confirmCalls=1=98}
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) final={order=CANCELLED payments=[SUCCEEDED]=98, order=CANCELLED payments=[]=2}
+MEASURE_V1 variant=before condition=A(natural, PG 50ms) afterOutboxDrain={order=CANCELLED refunds=0 auditSkipped=0 inventory[init,avail,reserved,sold]=[10, 10, 0, 0]=2, order=CANCELLED refunds=0 auditSkipped=1 inventory[init,avail,reserved,sold]=[10, 10, 0, 0] (violation)=98}
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) violations=100/100
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) pay={OK:SUCCEEDED=100}
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) cancel={OK:CANCELLED=100}
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) pgConfirm={confirmCalls=1=100}
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) final={order=CANCELLED payments=[SUCCEEDED]=100}
+MEASURE_V1 variant=before condition=B(trigger pg_sleep 200ms, cancel +50ms) afterOutboxDrain={order=CANCELLED refunds=0 auditSkipped=1 inventory[init,avail,reserved,sold]=[10, 10, 0, 0] (violation)=100}
+MEASURE_V1 variant=before cleanup: trigger rows=0 function rows=0
+BUILD SUCCESSFUL in 56s
+```
+
+### after - efc62e4
+```
+$ cd wt-V1-after/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i   # efc62e4
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) violations=0/100
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) pay={ApiException:ORDER_NOT_PAYABLE=7, OK:SUCCEEDED=93}
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) cancel={ApiException:PAYMENT_NOT_SETTLED=93, OK:CANCELLED=7}
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) pgConfirm={confirmCalls=0=7, confirmCalls=1=93}
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) final={order=CANCELLED payments=[]=7, order=PENDING_PAYMENT payments=[SUCCEEDED]=93}
+MEASURE_V1 variant=after condition=A(natural, PG 50ms) afterOutboxDrain={order=CANCELLED refunds=0 auditSkipped=0 inventory[init,avail,reserved,sold]=[10, 10, 0, 0]=7, order=PAID refunds=0 auditSkipped=0 inventory[init,avail,reserved,sold]=[10, 9, 0, 1]=93}
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) violations=0/100
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) pay={OK:SUCCEEDED=100}
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) cancel={ApiException:PAYMENT_NOT_SETTLED=100}
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) pgConfirm={confirmCalls=1=100}
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) final={order=PENDING_PAYMENT payments=[SUCCEEDED]=100}
+MEASURE_V1 variant=after condition=B(trigger pg_sleep 200ms, cancel +50ms) afterOutboxDrain={order=PAID refunds=0 auditSkipped=0 inventory[init,avail,reserved,sold]=[10, 9, 0, 1]=100}
+MEASURE_V1 variant=after cleanup: trigger rows=0 function rows=0
+BUILD SUCCESSFUL in 54s
+```
+
+### alt2 - 1527762 + 위 패치
+```
+$ cd wt-V1-alt2/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i   # 1527762 + 대안 패치
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) violations=98/100
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) pay={ApiException:ORDER_NOT_PAYABLE=2, OK:SUCCEEDED=98}
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) cancel={OK:CANCELLED=100}
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) pgConfirm={confirmCalls=0=2, confirmCalls=1=98}
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) final={order=CANCELLED payments=[SUCCEEDED]=98, order=CANCELLED payments=[]=2}
+MEASURE_V1 variant=alt2 condition=A(natural, PG 50ms) afterOutboxDrain={order=CANCELLED refunds=0 auditSkipped=0 inventory[init,avail,reserved,sold]=[10, 10, 0, 0]=2, order=CANCELLED refunds=0 auditSkipped=1 inventory[init,avail,reserved,sold]=[10, 10, 0, 0] (violation)=98}
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) violations=100/100
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) pay={OK:SUCCEEDED=100}
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) cancel={OK:CANCELLED=100}
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) pgConfirm={confirmCalls=1=100}
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) final={order=CANCELLED payments=[SUCCEEDED]=100}
+MEASURE_V1 variant=alt2 condition=B(trigger pg_sleep 200ms, cancel +50ms) afterOutboxDrain={order=CANCELLED refunds=0 auditSkipped=1 inventory[init,avail,reserved,sold]=[10, 10, 0, 0] (violation)=100}
+MEASURE_V1 variant=alt2 cleanup: trigger rows=0 function rows=0
+BUILD SUCCESSFUL in 55s
+```
+
+해석(측정으로 확인된 부분만):
+- before: 두 조건 모두 "취소 성공 + 결제 성공"이 동시에 성립했다. outbox를 소진한 뒤에도 refunds=0이고,
+  주문은 CANCELLED, 재고는 다시 판매 가능 상태(avail=10)로 남았다. 위반 회차는 결제가 SUCCEEDED인데 자동 환불이 없다.
+- after: 진 쪽이 409로 거부된다. 결제가 먼저면 취소가 PAYMENT_NOT_SETTLED, 취소가 먼저면 결제가 ORDER_NOT_PAYABLE.
+  결제가 이긴 회차는 outbox 소진 뒤 주문이 PAID, 재고가 sold=1이 된다.
+- alt2: before와 같은 분포다. 결제 쪽만 주문 행을 잠가도 취소의 단일 UPDATE 결과가 바뀌지 않았다.
+
+실행 시각 (전역 flock으로 직렬화, 변형별 1회):
+```
+=== before start 2026-09-28 16:10:23 commit=1527762
+=== before end 2026-09-28 16:11:49 exit=0
+=== after start 2026-09-28 16:11:49 commit=efc62e4
+=== after end 2026-09-28 16:13:02 exit=0
+=== alt2 start 2026-09-28 16:14:33 commit=1527762
+=== alt2 end 2026-09-28 16:16:20 exit=0
+```
+
+## 5. 수정 전 코드에서 돌린 회귀 테스트
+
+efc62e4에 들어 있는 app/src/test/java/com/groupdrop/payment/PaymentConcurrencyTest.java를 1527762 worktree에 넣고
+`주문_취소와_결제_요청이_동시에_와도_취소된_주문에_성공_결제가_남지_않는다` 메서드만 실행했다. 10회 반복 중 주문 id 3에서 실패했다(빈 DB에서 회차마다 주문 1건을 만들므로 세 번째 회차로 보인다).
+
+```
+> Task :test FAILED
+
+PaymentConcurrencyTest > 주문_취소와_결제_요청이_동시에_와도_취소된_주문에_성공_결제가_남지_않는다() FAILED
+org.opentest4j.AssertionFailedError: [취소된 주문 3에 확정 결제가 남았습니다 (results=[PAY:SUCCEEDED, CANCEL:CANCELLED])] 
+expected: 0L
+but was: 1L
+at app//com.groupdrop.payment.PaymentConcurrencyTest.주문_취소와_결제_요청이_동시에_와도_취소된_주문에_성공_결제가_남지_않는다(PaymentConcurrencyTest.java:172)
+
+1 test completed, 1 failed
+BUILD FAILED in 15s
+```
+
+## 6. psql 2세션 실험 (원인 확인)
+
+목적: "한 쿼리의 조건은 쿼리 시작 시점에 판정되므로, 잠금을 먼저 받고 새 쿼리로 다시 확인해야 한다"는 설명을 두 세션으로 직접 확인한다.
+스크립트 주석과 E2 제목에 적힌 용어는 실험 전 가설을 부르던 이름이다. 결론은 아래 결과와 해석에서 읽는다.
+컨테이너: postgres:16.15-alpine 일회용 (이름 v1-epq-pg, 실험 뒤 삭제).
+
+### 스크립트 (psql-two-session-experiment.sh)
+```bash
+#!/bin/bash
+P="docker exec -i v1-epq-pg psql -U postgres -X -q -v ON_ERROR_STOP=1"
+reset() {
+$P <<SQL
+DROP TABLE IF EXISTS payments; DROP TABLE IF EXISTS orders;
+CREATE TABLE orders(id int primary key, status text, updated_at timestamptz default now());
+CREATE TABLE payments(id serial primary key, order_id int, status text);
+INSERT INTO orders VALUES (1,'PENDING_PAYMENT');
+SQL
+}
+CANCEL_UPDATE="UPDATE orders SET status='CANCELLED' WHERE id=1 AND status='PENDING_PAYMENT' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id=orders.id AND p.status NOT IN ('READY','FAILED'));"
+
+echo "### E1: 결제 쪽 SELECT ... FOR UPDATE(행 잠금만) + INSERT, 취소 쪽 단일 조건부 UPDATE(NOT EXISTS)"
+reset
+( $P <<SQL
+BEGIN;
+SELECT status FROM orders WHERE id=1 FOR UPDATE;
+INSERT INTO payments(order_id,status) VALUES (1,'PROCESSING');
+SELECT pg_sleep(2);
+COMMIT;
+SQL
+) >/dev/null &
+sleep 0.5
+$P -c "\timing on" -c "$CANCEL_UPDATE" -c "SELECT 'result' AS k, o.status AS order_status, (SELECT string_agg(status,',') FROM payments) AS payments FROM orders o WHERE id=1;" 2>&1 | grep -v '^$'
+wait
+
+echo "### E2: 결제 쪽이 주문 행을 실제로 UPDATE(=EvalPlanQual 재평가 유발) + INSERT, 취소 쪽 단일 조건부 UPDATE"
+reset
+( $P <<SQL
+BEGIN;
+UPDATE orders SET updated_at = now() WHERE id=1;
+INSERT INTO payments(order_id,status) VALUES (1,'PROCESSING');
+SELECT pg_sleep(2);
+COMMIT;
+SQL
+) >/dev/null &
+sleep 0.5
+$P -c "$CANCEL_UPDATE" -c "SELECT 'result' AS k, o.status AS order_status, (SELECT string_agg(status,',') FROM payments) AS payments FROM orders o WHERE id=1;" 2>&1 | grep -v '^$'
+wait
+
+echo "### E3: 수정 후 방식 — 취소 쪽이 먼저 FOR UPDATE(별도 문장)로 잠근 뒤 다음 문장에서 진행 중 결제 확인"
+reset
+( $P <<SQL
+BEGIN;
+SELECT status FROM orders WHERE id=1 FOR UPDATE;
+INSERT INTO payments(order_id,status) VALUES (1,'PROCESSING');
+SELECT pg_sleep(2);
+COMMIT;
+SQL
+) >/dev/null &
+sleep 0.5
+$P <<SQL 2>&1 | grep -v '^$'
+BEGIN;
+SELECT 'lock' AS k, status FROM orders WHERE id=1 FOR UPDATE;
+SELECT 'has_unsettled' AS k, EXISTS (SELECT 1 FROM payments WHERE order_id=1 AND status NOT IN ('READY','FAILED')) AS v;
+ROLLBACK;
+SQL
+wait
+```
+
+### 결과 (psql-two-session-result.txt)
+```
+-- 공통 스키마: orders(id,status,updated_at), payments(id,order_id,status); orders(1,'PENDING_PAYMENT')
+-- 취소 쪽 단일 UPDATE (수정 전 OrderRepository.cancelOrder와 같은 형태):
+UPDATE orders SET status='CANCELLED' WHERE id=1 AND status='PENDING_PAYMENT'
+   AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id=orders.id AND p.status NOT IN ('READY','FAILED'));
+-- 세션1(E1,E3): BEGIN; SELECT status FROM orders WHERE id=1 FOR UPDATE; INSERT INTO payments(order_id,status) VALUES (1,'PROCESSING'); SELECT pg_sleep(2); COMMIT;
+-- 세션1(E2):    BEGIN; UPDATE orders SET updated_at=now() WHERE id=1;   INSERT ... 'PROCESSING'; SELECT pg_sleep(2); COMMIT;
+-- 세션2(E3):    BEGIN; SELECT status FROM orders WHERE id=1 FOR UPDATE; SELECT EXISTS(SELECT 1 FROM payments WHERE order_id=1 AND status NOT IN ('READY','FAILED')); ROLLBACK;
+
+### E1: 결제 쪽 SELECT ... FOR UPDATE(행 잠금만) + INSERT, 취소 쪽 단일 조건부 UPDATE(NOT EXISTS)
+Time: 1499.085 ms (00:01.499)          <- 취소 UPDATE가 잠금을 기다린 시간
+   k    | order_status |  payments
+--------+--------------+------------
+ result | CANCELLED    | PROCESSING
+### E2: 결제 쪽이 주문 행을 실제로 UPDATE(=EvalPlanQual 재평가 유발) + INSERT, 취소 쪽 단일 조건부 UPDATE
+   k    | order_status |  payments
+--------+--------------+------------
+ result | CANCELLED    | PROCESSING
+### E3: 수정 후 방식 — 취소 쪽이 먼저 FOR UPDATE(별도 문장)로 잠근 뒤 다음 문장에서 진행 중 결제 확인
+  k   |     status
+------+-----------------
+ lock | PENDING_PAYMENT
+       k       | v
+---------------+---
+ has_unsettled | t
+```
+
+해석:
+- E1: 취소 UPDATE는 약 1.5초 동안 잠금을 기다렸다. 그런데 결제 세션이 커밋한 PROCESSING 결제를 보지 못하고 CANCELLED로 바꿨다.
+  결제 세션은 주문 행을 잠그기만 하고 수정하지 않았다. 잠금을 기다려도 UPDATE 한 문장 안의 NOT EXISTS 판정 결과는 바뀌지 않았다.
+- E2: 결제 세션이 주문 행을 실제로 수정한 경우에도 같은 결과였다(CANCELLED + PROCESSING).
+- E3: 먼저 FOR UPDATE로 기다린 뒤 별도의 새 문장으로 확인하자 has_unsettled = t, 즉 결제를 봤다. 수정 후 cancelOrder가 이 순서다.
+
+## 7. 재현 방법
+
+<worktree>는 임의의 빈 디렉터리다. Docker가 실행 중이어야 한다. 변형마다 약 1분.
+
+```bash
+# 1. worktree 생성 (변형마다 하나)
+git worktree add --detach <worktree>/wt-before 1527762
+git worktree add --detach <worktree>/wt-after  efc62e4
+git worktree add --detach <worktree>/wt-alt2   1527762
+
+# 2. 대안 패치 적용 (alt2만). 이 파일 3절의 diff를 alt2.diff로 저장한 뒤
+git -C <worktree>/wt-alt2 apply <path>/alt2.diff
+
+# 3. 측정 테스트 복사 (이 파일 2절의 소스를 CancelPayRaceV1MeasureTest.java로 저장)
+for v in before after alt2; do
+  cp <path>/CancelPayRaceV1MeasureTest.java <worktree>/wt-$v/app/src/test/java/com/groupdrop/payment/
+  # 변형 이름 치환 (라벨만 바뀌며 측정 결과에는 영향이 없다)
+  sed -i "s/getOrDefault(\"MEASURE_VARIANT\", \"?\")/getOrDefault(\"MEASURE_VARIANT\", \"$v\")/" <worktree>/wt-$v/app/src/test/java/com/groupdrop/payment/CancelPayRaceV1MeasureTest.java
+done
+
+# 4. 실행 (변형 이름은 소스의 "?"를 before/after/alt2로 치환해 넣은 것)
+cd <worktree>/wt-before/app && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i
+cd <worktree>/wt-after/app  && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i
+cd <worktree>/wt-alt2/app   && ./gradlew test --tests 'com.groupdrop.payment.CancelPayRaceV1MeasureTest' -i
+
+# 5. 수정 전 코드에서 회귀 테스트 실패 확인
+git show efc62e4:app/src/test/java/com/groupdrop/payment/PaymentConcurrencyTest.java > <worktree>/wt-before/app/src/test/java/com/groupdrop/payment/PaymentConcurrencyTest.java
+cd <worktree>/wt-before/app && ./gradlew test --tests 'com.groupdrop.payment.PaymentConcurrencyTest.주문_취소와_결제_요청이_동시에_와도_취소된_주문에_성공_결제가_남지_않는다' -i
+
+# 6. psql 실험: 6절 스크립트를 psql-two-session-experiment.sh로 저장하고,
+#    일회용 postgres:16.15-alpine 컨테이너(이름 v1-epq-pg)를 띄운 뒤 실행
+docker run -d --name v1-epq-pg -e POSTGRES_PASSWORD=x postgres:16.15-alpine
+until docker exec v1-epq-pg pg_isready -U postgres; do sleep 1; done
+bash psql-two-session-experiment.sh
+docker rm -f v1-epq-pg
+```
+
+측정 뒤 정리: `git worktree remove --force <worktree>/wt-before` (after, alt2도 같다).
+
+## 8. 이 측정이 말하지 않는 것
+
+- 운영 환경의 발생 빈도. 경쟁 구간은 결제 준비 트랜잭션이 도는 짧은 시간이고, 빈도는 재지 않았다.
+- 수정 전후의 처리량·지연 차이. 잠금은 주문 1행이며 PG 호출은 트랜잭션 밖이지만, 부하 비교는 하지 않았다.
+- SERIALIZABLE 등 다른 격리 수준과의 비교.
