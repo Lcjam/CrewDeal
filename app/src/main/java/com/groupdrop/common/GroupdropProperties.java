@@ -38,6 +38,10 @@ public record GroupdropProperties(
         /** 멱등 키 수명 (PAY-02: 재고 예약 시간보다 충분히 긴 24시간). */
         @DefaultValue("24h") Duration idempotencyKeyTtl,
         @DefaultValue("1m") Duration orphanPaymentSweepInterval,
+        /** false면 기동 시 시드 계정을 만들지 않는다. 운영 배포에서 GROUPDROP_SEED_ENABLED=false로 끈다. */
+        @DefaultValue("true") boolean seedEnabled,
+        /** 시드 계정 공통 비밀번호(데모 기본값). GROUPDROP_SEED_PASSWORD로 주입한다. 로그에 남기지 않는다. */
+        @DefaultValue("groupdrop123!") String seedPassword,
         @DefaultValue Pg pg,
         @DefaultValue Webhook webhook) {
 

@@ -1,8 +1,11 @@
 package com.groupdrop.user;
 
+import com.groupdrop.common.GroupdropProperties;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -11,7 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 시드 계정 생성 (기획서 5장 — 인증은 시드 데이터로만 생성, 회원가입 화면 없음).
- * 프로파일 무관 실행.
+ * 기본값에서는 프로파일 무관하게 매 기동마다 실행한다.
+ *
+ * <p>운영 배포에서는 {@code GROUPDROP_SEED_ENABLED=false}로 시드를 끄고, 켜 둘 때는
+ * {@code GROUPDROP_SEED_PASSWORD}로 비밀번호를 주입한다 (기본값은 데모 비밀번호).
+ * 계정은 없을 때만 만들므로, 주입한 비밀번호는 새로 생성되는 계정에만 적용되고 이미 있는 계정의 비밀번호를
+ * 바꾸지 않는다. 시드를 꺼도 이미 만들어진 계정은 지우지 않는다.
  *
  * <p>여러 인스턴스가 빈 DB로 동시에 기동해도 멱등해야 한다. 조회 후 저장(find → save)은 두 인스턴스가
  * 모두 "없음"을 보고 INSERT해 UNIQUE 위반으로 한쪽 기동이 죽으므로, 계정과 프로필 모두
@@ -21,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class SeedDataRunner implements ApplicationRunner {
 
-    private static final String SEED_PASSWORD = "groupdrop123!";
+    private static final Logger log = LoggerFactory.getLogger(SeedDataRunner.class);
 
     static final List<SeedAccount> DEFAULT_ACCOUNTS = List.of(
             new SeedAccount("admin@groupdrop.test", UserRole.ADMIN, null),
@@ -35,22 +43,29 @@ public class SeedDataRunner implements ApplicationRunner {
     private final SupplierRepository supplierRepository;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
+    private final GroupdropProperties properties;
 
     public SeedDataRunner(UserRepository userRepository,
                            InfluencerRepository influencerRepository,
                            SupplierRepository supplierRepository,
                            PasswordEncoder passwordEncoder,
-                           Clock clock) {
+                           Clock clock,
+                           GroupdropProperties properties) {
         this.userRepository = userRepository;
         this.influencerRepository = influencerRepository;
         this.supplierRepository = supplierRepository;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
+        this.properties = properties;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        if (!properties.seedEnabled()) {
+            log.info("groupdrop.seed-enabled=false: 시드 계정 생성을 건너뜁니다.");
+            return;
+        }
         seed(DEFAULT_ACCOUNTS);
     }
 
@@ -59,7 +74,7 @@ public class SeedDataRunner implements ApplicationRunner {
     void seed(List<SeedAccount> accounts) {
         Instant now = Instant.now(clock);
         // 모든 시드 계정의 비밀번호가 같으므로 한 번만 인코딩한다 (BCrypt는 기동 시간에 비싸다).
-        String passwordHash = passwordEncoder.encode(SEED_PASSWORD);
+        String passwordHash = passwordEncoder.encode(properties.seedPassword());
         for (SeedAccount account : accounts) {
             userRepository.insertIfAbsent(account.email(), passwordHash, localPart(account.email()),
                     account.role().name(), now);
