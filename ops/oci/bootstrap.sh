@@ -4,6 +4,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Lcjam/CrewDeal/main/ops/oci/bootstrap.sh | bash
 #   (브랜치 지정) REPO_REF=chore/oci-deploy bash bootstrap.sh
+#   (push 없이 로컬 트리를 올릴 때) git archive HEAD | ssh <vm> 'mkdir -p ~/CrewDeal && tar -x -C ~/CrewDeal'
+#                                   ssh <vm> 'SKIP_GIT=1 bash ~/CrewDeal/ops/oci/bootstrap.sh'
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Lcjam/CrewDeal.git}"
@@ -30,7 +32,9 @@ if ! command -v docker > /dev/null; then
 fi
 command -v git > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
 
-if [ -d "${APP_DIR}/.git" ]; then
+if [ "${SKIP_GIT:-0}" = 1 ]; then
+  log "git 생략 — ${APP_DIR}의 현재 트리를 그대로 쓴다"
+elif [ -d "${APP_DIR}/.git" ]; then
   log "저장소 갱신 (${REPO_REF})"
   git -C "${APP_DIR}" fetch --quiet origin "${REPO_REF}"
   git -C "${APP_DIR}" checkout --quiet -B "${REPO_REF}" "origin/${REPO_REF}"
