@@ -16,7 +16,8 @@ SWAP_SIZE="${SWAP_SIZE:-4G}"
 log() { echo "[bootstrap] $*"; }
 
 # Gradle 빌드 2개 + JVM 2개 + Postgres가 메모리를 동시에 쓴다. 1GB 인스턴스에서도 빌드가 죽지 않게 스왑을 둔다.
-if ! swapon --show | grep -q /swapfile; then
+# 이미 다른 서비스가 도는 VM이면 기존 스왑 구성을 건드리지 않는다.
+if [ -z "$(swapon --show --noheadings)" ] && [ "${SKIP_SWAP:-0}" != 1 ]; then
   log "swap ${SWAP_SIZE} 생성"
   sudo fallocate -l "${SWAP_SIZE}" /swapfile
   sudo chmod 600 /swapfile
@@ -52,21 +53,26 @@ POSTGRES_PASSWORD=$(rand)
 WEBHOOK_SECRET=$(rand)
 GRAFANA_ADMIN_PASSWORD=$(rand)
 SETTLEMENT_GRACE_PERIOD=0s
-APP_BIND=0.0.0.0
+APP_BIND=${APP_BIND:-0.0.0.0}
+APP_HOST_PORT=${APP_HOST_PORT:-8080}
+POSTGRES_HOST_PORT=${POSTGRES_HOST_PORT:-5432}
+MOCK_PG_HOST_PORT=${MOCK_PG_HOST_PORT:-8081}
 ENV
   chmod 600 .env
 fi
 
 log "빌드 및 기동 (첫 빌드는 수 분 걸린다)"
-sudo docker compose -f docker-compose.oci.yml --env-file .env up -d --build
+sudo docker compose -p crewdeal -f docker-compose.oci.yml --env-file .env up -d --build
 
-log "app 헬스 대기"
+APP_PORT="$(grep -E '^APP_HOST_PORT=' .env | cut -d= -f2)"
+APP_PORT="${APP_PORT:-8080}"
+log "app 헬스 대기 (:${APP_PORT})"
 for _ in $(seq 1 60); do
-  if curl --fail --silent http://localhost:8080/actuator/health > /dev/null; then
-    log "UP — http://<공인 IP>:8080/console/index.html"
+  if curl --fail --silent "http://localhost:${APP_PORT}/actuator/health" > /dev/null; then
+    log "UP — http://<공인 IP>:${APP_PORT}/console/index.html"
     exit 0
   fi
   sleep 5
 done
-log "app이 5분 안에 UP 되지 않았다: sudo docker compose -f docker-compose.oci.yml logs app"
+log "app이 5분 안에 UP 되지 않았다: sudo docker compose -p crewdeal -f docker-compose.oci.yml logs app"
 exit 1
