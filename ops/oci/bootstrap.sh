@@ -61,8 +61,14 @@ ENV
   chmod 600 .env
 fi
 
+# 다른 리버스 프록시 뒤에 붙일 때: COMPOSE_EXTRA=docker-compose.oci-edge.yml EDGE_NETWORK=<네트워크>
+COMPOSE_FILES=(-f docker-compose.oci.yml)
+if [ -n "${COMPOSE_EXTRA:-}" ]; then
+  COMPOSE_FILES+=(-f "${COMPOSE_EXTRA}")
+fi
+
 log "빌드 및 기동 (첫 빌드는 수 분 걸린다)"
-sudo docker compose -p crewdeal -f docker-compose.oci.yml --env-file .env up -d --build
+sudo EDGE_NETWORK="${EDGE_NETWORK:-}" docker compose -p crewdeal "${COMPOSE_FILES[@]}" --env-file .env up -d --build
 
 APP_PORT="$(grep -E '^APP_HOST_PORT=' .env | cut -d= -f2)"
 APP_PORT="${APP_PORT:-8080}"

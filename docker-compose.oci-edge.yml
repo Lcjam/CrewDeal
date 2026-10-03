@@ -1,0 +1,19 @@
+# 같은 VM의 다른 리버스 프록시 뒤에 붙일 때 쓰는 오버레이 (docker-compose.oci.yml과 함께 쓴다).
+#
+# app을 프록시가 속한 기존 Docker 네트워크에 crewdeal-app 별칭으로 붙인다. 프록시는
+# http://crewdeal-app:8080으로 넘기고, app의 호스트 포트는 127.0.0.1에만 열어 두면 된다(APP_BIND).
+# postgres·mock-pg는 이 네트워크에 붙이지 않는다.
+#
+#   COMPOSE_EXTRA=docker-compose.oci-edge.yml EDGE_NETWORK=harumal_frontend bash ops/oci/bootstrap.sh
+services:
+  app:
+    networks:
+      default:
+      edge:
+        aliases:
+          - crewdeal-app
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:?EDGE_NETWORK is required}
