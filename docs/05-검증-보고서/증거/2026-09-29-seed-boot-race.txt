@@ -7,7 +7,7 @@
 조건: 2026-09-28-seed-boot-race.txt와 같다. 같은 측정 스크립트(3절 measure-boot-race.sh)와 같은 측정 전용 테스트(4절 SeedDataConcurrencyMeasureTest)를 썼다. 빈 줄을 뺀 내용이 09-28 증거 3·4절과 같음을 diff로 확인했다.
       구성: 저장소의 docker-compose.yml + docker-compose.two-instances.yml (앱 2대 오버레이), 격리 compose 프로젝트 crewdeal-v4-before / crewdeal-v4-after, 매 회 down -v로 DB를 비운 뒤 postgres·mock-pg·app·app2를 함께 올려 컨테이너가 죽는지 관찰.
       환경: 로컬 WSL2 / Docker / Testcontainers postgres:16-alpine (8스레드 측정). 운영 환경이 아니다.
-한계: 20회는 확률적 경쟁의 표본 하나이며 발생률의 정밀한 추정치가 아니다. 09-28 표본(6/20)과 이 표본(14/20)의 차이는 기동 지터 차이이며, 둘 다 "수정 전에는 여러 번 죽고 수정 후에는 한 번도 죽지 않았다"를 보여 줄 뿐이다.
+한계: 20회는 확률적 경쟁의 표본 하나이며 발생률의 정밀한 추정치가 아니다. 09-28 표본(6/20)과 이 표본(14/20)처럼 기동 타이밍 등에 따라 표본별 관측 횟수는 달라질 수 있다(차이의 원인은 따로 측정하지 않았다). 두 표본 모두 "수정 전에는 여러 번 죽고 수정 후에는 한 번도 죽지 않았다"를 보여 줄 뿐이다.
       after 0/20은 "이번 20회 표본에서 재현되지 않았다"이지 확률이 0이라는 증명이 아니다.
 
 ## 1. 요약
