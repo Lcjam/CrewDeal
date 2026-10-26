@@ -10,8 +10,12 @@ import org.springframework.stereotype.Component;
  * 정기 대사 (REC-01). 최소 경과 시간은 프로퍼티에서 오고, 테스트·운영자 수동 실행은 API로 재정의한다
  * (S4-b는 0).
  *
- * <p>다중 인스턴스에서 동시에 돌아도 안전하다 — 불일치 등록은 유형·대상당 1행 유니크로 접히고,
- * 해소 단계의 상태 전이는 전부 조건부 UPDATE이며 PG 조회는 멱등이다 (14.5).
+ * <p>인스턴스마다 이 스케줄러가 돌지만 실행은 한 번에 하나다. {@code RUNNING} 대사는 부분 유니크
+ * 인덱스({@code ux_reconciliation_single_running}, V6)로 한 행만 허용되고, 늦게 시작한 쪽은
+ * {@link ReconciliationRepository.ReconciliationAlreadyRunningException}을 받아 이번 주기를 건너뛴다.
+ * 불일치 유니크와 조건부 UPDATE만으로는 겹친 두 실행이 서로의 재검출을 "사라짐"으로 닫는 것을 막지
+ * 못했다. 자동 해소는 조회 범위(cutoff) 안의 건만 닫고, 회수된 옛 실행의 늦은 쓰기는 반영하지
+ * 않는다 ({@code ReconciliationRepository}).
  */
 @Component
 public class ReconciliationScheduler {
