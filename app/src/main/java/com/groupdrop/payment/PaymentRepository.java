@@ -30,8 +30,10 @@ public class PaymentRepository {
      * "CANCELLED 주문 + SUCCEEDED 결제"가 만들어진다. {@code cancelOrder}도 같은 행을 잠그므로
      * (`OrderRepository.lockOrder`) 둘 중 하나는 반드시 상대의 결과를 보고 판단하게 된다.
      *
-     * <p>취소 쪽의 조건부 UPDATE만으로는 부족하다: PostgreSQL의 EvalPlanQual은 행 잠금 해제 후
-     * WHERE를 재평가할 때 서브쿼리를 원래 스냅숏으로 평가해, 방금 커밋된 결제를 보지 못한다.
+     * <p>여기서만 잠그면 부족하다: 취소의 조건부 UPDATE는 이 잠금을 기다린 뒤 진행하지만, 그 문장의
+     * {@code NOT EXISTS (payments …)}는 문장 시작 시점 스냅숏으로 판정돼 방금 커밋된 결제를 보지
+     * 못한다. 이 경로는 주문 행을 갱신하지 않으므로 EvalPlanQual 재평가도 일어나지 않는다. 그래서
+     * 취소도 주문 행을 별도 문장으로 먼저 잠그고, 다음 문장에서 결제를 확인한다.
      *
      * <p>락 순서는 캠페인 → 주문이다. 호출자가 {@code CampaignTransactionBarrier}로 캠페인 행을 먼저
      * 잠그고, {@code cancelOrder}는 캠페인 행을 잠그지 않으므로 순환은 생기지 않는다.
