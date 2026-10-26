@@ -89,31 +89,36 @@ public class PaymentService {
         Instant now = Instant.now(clock);
         CampaignTransactionBarrier.CampaignLock campaign = campaignBarrier.lockByOrderId(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+        PaymentRepository.OrderForPayment order = payments.findOrderForPayment(orderId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+        // 소유자 검사는 재생보다 앞에 둔다. 남의 주문 scope와 키를 알아도 저장된 응답을 꺼내 갈 수 없어야 한다.
+        if (!order.buyerId().equals(buyer.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_NOT_OWNER", "본인 주문만 결제할 수 있습니다.");
+        }
+        if (request == null || request.amount() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PAYMENT_AMOUNT_REQUIRED", "결제 금액은 필수입니다.");
+        }
+
+        // 해시는 요청 금액으로 만든다. 같은 키에 다른 금액이 오면 재생이 아니라 요청 내용 불일치다 (PAY-02).
+        String requestHash = hash(orderId, request.amount());
+        if (!idempotency.claim(scope, key, requestHash, now, now.plus(properties.idempotencyKeyTtl()))) {
+            metrics.recordDuplicatePrevented();
+            return new Preparation(replayOrReject(scope, key, requestHash, now), null, null, null, 0L);
+        }
+
+        // 상태 검증은 선점 뒤에 한다. 그래야 주문·캠페인 상태가 바뀐 뒤의 같은 키 재요청도 저장된 응답으로
+        // 수렴한다 (PAY-02, RefundService와 같은 원칙). 여기서 던지면 준비 트랜잭션이 롤백돼 선점도 남지 않는다.
         if (!campaign.allowsExistingOrderPayment()) {
             throw new ApiException(HttpStatus.CONFLICT, "CAMPAIGN_NOT_PAYABLE",
                     "강제 종료되었거나 결제를 허용하지 않는 캠페인입니다. 현재 상태: " + campaign.status());
-        }
-        PaymentRepository.OrderForPayment order = payments.findOrderForPayment(orderId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
-        if (!order.buyerId().equals(buyer.getId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_NOT_OWNER", "본인 주문만 결제할 수 있습니다.");
         }
         if (!"PENDING_PAYMENT".equals(order.status())) {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_PAYABLE",
                     "결제 대기 상태의 주문만 결제할 수 있습니다. 현재 상태: " + order.status());
         }
-        if (request == null || request.amount() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PAYMENT_AMOUNT_REQUIRED", "결제 금액은 필수입니다.");
-        }
         if (request.amount() != order.totalAmount()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PAYMENT_AMOUNT_MISMATCH",
                     "결제 금액이 주문 금액과 일치하지 않습니다.");
-        }
-
-        String requestHash = hash(orderId, order.totalAmount());
-        if (!idempotency.claim(scope, key, requestHash, now, now.plus(properties.idempotencyKeyTtl()))) {
-            metrics.recordDuplicatePrevented();
-            return new Preparation(replayOrReject(scope, key, requestHash, now), null, null, null, 0L);
         }
 
         // PAY-01 이중 결제 예방. 이 검사와 아래 INSERT 사이의 경쟁 창은 의도적으로 남아 있으며,
